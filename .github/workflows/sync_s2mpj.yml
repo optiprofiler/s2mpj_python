@@ -1,6 +1,7 @@
 name: Sync S2MPJ Python Subset
 
 on:
+  push:
   schedule:
     # Run once a day at 00:00 UTC to check for updates
     - cron: '0 0 * * *'

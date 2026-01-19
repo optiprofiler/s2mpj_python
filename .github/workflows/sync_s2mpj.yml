@@ -1,0 +1,76 @@
+name: Sync S2MPJ Python Subset
+
+on:
+  schedule:
+    # Run once a day at 00:00 UTC to check for updates
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    # Allows manual triggering of the workflow from the GitHub Actions tab
+
+permissions:
+  contents: write
+
+jobs:
+  sync-and-filter:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Local Repository
+        uses: actions/checkout@v4
+
+      - name: Configure Git Identity
+        # Set up the git user to be the GitHub Actions bot for commits
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+      - name: Sync and Filter Files
+        run: |
+          # 1. Clone the upstream repository to a temporary directory
+          # We only need the latest commit (depth 1) to save bandwidth and time
+          echo "Cloning upstream repository..."
+          git clone --depth 1 https://github.com/GrattonToint/S2MPJ.git temp_upstream
+
+          # 2. Clean managed files in current workspace for fresh sync
+          # We purposefully only remove the specific files/folders we are syncing.
+          # This allows the user to keep other custom files (like README.md) in the root.
+          echo "Cleaning managed files matching upstream subset..."
+          rm -rf python_problems list_of_python_problems s2mpjlib.py
+
+          # 3. Copy only the specific files/folders we want from the temporary upstream directory
+          echo "Copying selected files..."
+          
+          # Copy the 'python_problems' directory
+          if [ -d "temp_upstream/python_problems" ]; then
+            cp -r temp_upstream/python_problems .
+          else
+            echo "::warning::Dir 'python_problems' not found in upstream"
+          fi
+          
+          # Copy the 'list_of_python_problems' file
+          if [ -f "temp_upstream/list_of_python_problems" ]; then
+            cp temp_upstream/list_of_python_problems .
+          else 
+            echo "::warning::File 'list_of_python_problems' not found in upstream"
+          fi
+
+          # Copy the 's2mpjlib.py' file
+          if [ -f "temp_upstream/s2mpjlib.py" ]; then
+            cp temp_upstream/s2mpjlib.py .
+          else
+             echo "::warning::File 's2mpjlib.py' not found in upstream"
+          fi
+
+          # 4. Remove the temporary upstream directory
+          rm -rf temp_upstream
+
+          # 5. Commit and push the changes
+          git add .
+          
+          # Check if there are any changes staged for commit
+          # 'git diff --staged --quiet' returns 0 (true) if there are no changes
+          if git diff --staged --quiet; then
+            echo "No changes detected. Skipping push."
+          else
+            git commit -m "Auto-sync subset files from GrattonToint/S2MPJ"
+            git push
+          fi

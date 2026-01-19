@@ -4,11 +4,11 @@ This repository provides a specialized Python-only subset of the [S2MPJ](https:/
 
 ## Contents
 
-This repository preserves only the files relevant to Python users from the original source:
+This repository preserves only the files relevant to Python users from the original source. These files are located in the `src/` directory:
 
-- **`python_problems/`**: Directory containing the optimization problems converted to Python.
-- **`list_of_python_problems`**: A listing of all available problems.
-- **`s2mpjlib.py`**: Supporting library script.
+- **`src/python_problems/`**: Directory containing the optimization problems converted to Python.
+- **`src/list_of_python_problems`**: A listing of all available problems.
+- **`src/s2mpjlib.py`**: Supporting library script.
 
 ## Maintenance
 

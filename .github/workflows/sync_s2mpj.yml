@@ -34,28 +34,29 @@ jobs:
           # We purposefully only remove the specific files/folders we are syncing.
           # This allows the user to keep other custom files (like README.md) in the root.
           echo "Cleaning managed files matching upstream subset..."
-          rm -rf python_problems list_of_python_problems s2mpjlib.py
+          mkdir -p src
+          rm -rf src/python_problems src/list_of_python_problems src/s2mpjlib.py
 
           # 3. Copy only the specific files/folders we want from the temporary upstream directory
           echo "Copying selected files..."
           
           # Copy the 'python_problems' directory
           if [ -d "temp_upstream/python_problems" ]; then
-            cp -r temp_upstream/python_problems .
+            cp -r temp_upstream/python_problems src/
           else
             echo "::warning::Dir 'python_problems' not found in upstream"
           fi
           
           # Copy the 'list_of_python_problems' file
           if [ -f "temp_upstream/list_of_python_problems" ]; then
-            cp temp_upstream/list_of_python_problems .
+            cp temp_upstream/list_of_python_problems src/
           else 
             echo "::warning::File 'list_of_python_problems' not found in upstream"
           fi
 
           # Copy the 's2mpjlib.py' file
           if [ -f "temp_upstream/s2mpjlib.py" ]; then
-            cp temp_upstream/s2mpjlib.py .
+            cp temp_upstream/s2mpjlib.py src/
           else
              echo "::warning::File 's2mpjlib.py' not found in upstream"
           fi

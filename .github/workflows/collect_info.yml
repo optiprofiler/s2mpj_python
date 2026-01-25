@@ -33,13 +33,22 @@ jobs:
           python-version: '3.11'
           check-latest: true
 
-      # Step 3: Install dependencies
+      # Step 3: Checkout OptiProfiler (contains required class definitions)
+      - name: Checkout OptiProfiler
+        uses: actions/checkout@v4
+        with:
+          repository: optiprofiler/optiprofiler
+          path: optiprofiler
+          submodules: recursive
+          ref: python
+
+      # Step 4: Install dependencies
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r .github/actions/collect_info/requirements.txt
 
-      # Step 4: Run the info collection script
+      # Step 5: Run the info collection script
       - name: Collect problem information
         run: python .github/actions/collect_info/s_getInfo.py
 

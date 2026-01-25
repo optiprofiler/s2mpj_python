@@ -14,12 +14,14 @@ import signal
 import os
 import sys
 
-# Add the repository root to path so we can import s2mpj_tools
+# Get the repository root directory (three levels up from this script)
 cwd = os.path.dirname(os.path.abspath(__file__))
 repo_root = os.path.abspath(os.path.join(cwd, '..', '..', '..'))
-sys.path.insert(0, repo_root)
 
-from s2mpj_tools import s2mpj_load
+# Add optiprofiler to the system path (checked out by GitHub Actions)
+sys.path.append(os.path.join(repo_root, 'optiprofiler'))
+sys.path.append(os.path.join(repo_root, 'optiprofiler', 'problems'))
+from problems.s2mpj.s2mpj_tools import s2mpj_load
 
 # Set the timeout (seconds) for each problem to be loaded
 timeout = 50

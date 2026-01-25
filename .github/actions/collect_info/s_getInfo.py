@@ -1,16 +1,17 @@
 """
 s_getInfo.py - Collect problem information from S2MPJ Python problem set
 
-This script scans all problems in the S2MPJ Python collection and extracts
-various metrics including dimensions, constraint counts, and function values.
-The results are saved to CSV files for later use by OptiProfiler.
-
-Usage: python s_getInfo.py
+This script is adapted from s2mpj_tools/s_getInfo.py for use in GitHub Actions.
+It uses optiprofiler's s2mpj module to load and analyze problems.
 """
 
 import numpy as np
 import pandas as pd
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
+from multiprocessing import Process, Queue
 import signal
+
+# Add optiprofiler to the system path
 import os
 import sys
 
@@ -26,110 +27,87 @@ from problems.s2mpj.s2mpj_tools import s2mpj_load
 # Set the timeout (seconds) for each problem to be loaded
 timeout = 50
 
-# Read problem list from src directory
-filename = os.path.join(repo_root, 'src', 'list_of_python_problems')
-with open(filename, 'r') as file:
-    problem_names = [line.strip().replace('.py', '') for line in file.readlines() 
-                     if line.strip() and not line.startswith('#')]
+# Read problem list from optiprofiler's s2mpj module (this is where the problems actually are)
+filename = os.path.join(repo_root, 'optiprofiler', 'problems', 's2mpj', 'src', 'list_of_python_problems')
+file = open(filename, 'r')
+# Collect the names of the problems from the file
+problem_names = [f.strip().replace('.py', '') for f in file.readlines() if f.strip() and not f.startswith('#')]
+file.close()
 
-# Exclude problematic problems that are known to cause issues
+# Exclude some problems
+# 'HS67', 'HS68', 'HS69', 'HS85', 'HS88', 'HS89', 'HS90', 'HS91', 'HS92' are under development and not ready for use
+# 'TWIRIBG1' will kill the process if run, so we exclude it
 problem_exclude = [
-    'SPARCO10LS', 'SPARCO10', 'SPARCO11LS', 'SPARCO11', 'SPARCO12LS', 'SPARCO12',
-    'SPARCO2LS', 'SPARCO2', 'SPARCO3LS', 'SPARCO3', 'SPARCO5LS', 'SPARCO5',
-    'SPARCO7LS', 'SPARCO7', 'SPARCO8LS', 'SPARCO8', 'SPARCO9LS', 'SPARCO9',
-    'ROSSIMP3_mp', 'HS67', 'HS68', 'HS69', 'HS85', 'HS88', 'HS89', 'HS90',
-    'HS91', 'HS92', 'TWIRIBG1'
+    'SPARCO10LS', 'SPARCO10', 'SPARCO11LS', 'SPARCO11', 'SPARCO12LS', 'SPARCO12', 'SPARCO2LS', 'SPARCO2', 'SPARCO3LS', 'SPARCO3', 'SPARCO5LS', 'SPARCO5', 'SPARCO7LS', 'SPARCO7', 'SPARCO8LS', 'SPARCO8', 'SPARCO9LS', 'SPARCO9', 'ROSSIMP3_mp', 'HS67', 'HS68', 'HS69', 'HS85', 'HS88', 'HS89', 'HS90', 'HS91', 'HS92', 'TWIRIBG1'
 ]
 problem_names = [name for name in problem_names if name not in problem_exclude]
 
-# List of known feasibility problems (objective function is not meaningful)
+# List all known feasibility problems
 known_feasibility = [
-    'AIRCRFTA', 'ARGAUSS', 'ARGLALE', 'ARGLBLE', 'ARGTRIG', 'ARTIF', 'BAmL1SP',
-    'BARDNE', 'BEALENE', 'BENNETT5', 'BIGGS6NE', 'BOOTH', 'BOXBOD', 'BRATU2D',
-    'BRATU2DT', 'BRATU3D', 'BROWNBSNE', 'BROWNDENE', 'BROYDN3D', 'CBRATU2D',
-    'CBRATU3D', 'CHANDHEQ', 'CHEMRCTA', 'CHWIRUT2', 'CLUSTER', 'COOLHANS',
-    'CUBENE', 'CYCLIC3', 'CYCLOOCF', 'CYCLOOCT', 'DANIWOOD', 'DANWOOD',
-    'DECONVBNE', 'DENSCHNBNE', 'DENSCHNDNE', 'DENSCHNFNE', 'DEVGLA1NE',
-    'DEVGLA2NE', 'DRCAVTY1', 'DRCAVTY2', 'DRCAVTY3', 'ECKERLE4', 'EGGCRATENE',
-    'EIGENA', 'EIGENB', 'ELATVIDUNE', 'ENGVAL2NE', 'ENSO', 'ERRINROSNE',
-    'ERRINRSMNE', 'EXP2NE', 'EXTROSNBNE', 'FLOSP2HH', 'FLOSP2HL', 'FLOSP2HM',
-    'FLOSP2TH', 'FLOSP2TL', 'FLOSP2TM', 'FREURONE', 'GENROSEBNE', 'GOTTFR',
-    'GROWTH', 'GULFNE', 'HAHN1', 'HATFLDANE', 'HATFLDBNE', 'HATFLDCNE',
-    'HATFLDDNE', 'HATFLDENE', 'HATFLDFLNE', 'HATFLDF', 'HATFLDG', 'HELIXNE',
-    'HIMMELBA', 'HIMMELBC', 'HIMMELBD', 'HIMMELBFNE', 'HS1NE', 'HS25NE',
-    'HS2NE', 'HS8', 'HYDCAR20', 'HYDCAR6', 'HYPCIR', 'INTEGREQ', 'INTEQNE',
-    'KOEBHELBNE', 'KOWOSBNE', 'KSS', 'LANCZOS1', 'LANCZOS2', 'LANCZOS3',
-    'LEVYMONE10', 'LEVYMONE5', 'LEVYMONE6', 'LEVYMONE7', 'LEVYMONE8',
-    'LEVYMONE9', 'LEVYMONE', 'LIARWHDNE', 'LINVERSENE', 'LSC1', 'LSC2',
-    'LUKSAN11', 'LUKSAN12', 'LUKSAN13', 'LUKSAN14', 'LUKSAN17', 'LUKSAN21',
-    'LUKSAN22', 'MANCINONE', 'METHANB8', 'METHANL8', 'MEYER3NE', 'MGH09',
-    'MGH10', 'MISRA1A', 'MISRA1B', 'MISRA1C', 'MISRA1D', 'MODBEALENE',
-    'MSQRTA', 'MSQRTB', 'MUONSINE', 'n10FOLDTR', 'NELSON', 'NONSCOMPNE',
-    'NYSTROM5', 'OSBORNE1', 'OSBORNE2', 'OSCIGRNE', 'OSCIPANE', 'PALMER1ANE',
-    'PALMER1BNE', 'PALMER1ENE', 'PALMER1NE', 'PALMER2ANE', 'PALMER2BNE',
-    'PALMER2ENE', 'PALMER3ANE', 'PALMER3BNE', 'PALMER3ENE', 'PALMER4ANE',
-    'PALMER4BNE', 'PALMER4ENE', 'PALMER5ANE', 'PALMER5BNE', 'PALMER5ENE',
-    'PALMER6ANE', 'PALMER6ENE', 'PALMER7ANE', 'PALMER7ENE', 'PALMER8ANE',
-    'PALMER8ENE', 'PENLT1NE', 'PENLT2NE', 'POROUS1', 'POROUS2', 'POWELLBS',
-    'POWELLSQ', 'POWERSUMNE', 'PRICE3NE', 'PRICE4NE', 'QINGNE', 'QR3D',
-    'RAT42', 'RAT43', 'RECIPE', 'REPEAT', 'RES', 'ROSZMAN1', 'RSNBRNE',
-    'SANTA', 'SEMICN2U', 'SEMICON1', 'SEMICON2', 'SPECANNE', 'SSBRYBNDNE',
-    'SSINE', 'THURBER', 'TQUARTICNE', 'VANDERM1', 'VANDERM2', 'VANDERM3',
-    'VANDERM4', 'VARDIMNE', 'VESUVIA', 'VESUVIO', 'VESUVIOU', 'VIBRBEAMNE',
-    'WATSONNE', 'WAYSEA1NE', 'WAYSEA2NE', 'YATP1CNE', 'YATP2CNE', 'YFITNE',
-    'ZANGWIL3'
+    'AIRCRFTA', 'ARGAUSS', 'ARGLALE', 'ARGLBLE', 'ARGTRIG', 'ARTIF', 'BAmL1SP', 'BARDNE', 'BEALENE', 'BENNETT5', 'BIGGS6NE', 'BOOTH', 'BOXBOD', 'BRATU2D', 'BRATU2DT', 'BRATU3D', 'BROWNBSNE', 'BROWNDENE', 'BROYDN3D', 'CBRATU2D', 'CBRATU3D', 'CHANDHEQ', 'CHEMRCTA', 'CHWIRUT2', 'CLUSTER', 'COOLHANS', 'CUBENE', 'CYCLIC3', 'CYCLOOCF', 'CYCLOOCT', 'DANIWOOD', 'DANWOOD', 'DECONVBNE', 'DENSCHNBNE', 'DENSCHNDNE', 'DENSCHNFNE', 'DEVGLA1NE', 'DEVGLA2NE', 'DRCAVTY1', 'DRCAVTY2', 'DRCAVTY3', 'ECKERLE4', 'EGGCRATENE', 'EIGENA', 'EIGENB', 'ELATVIDUNE', 'ENGVAL2NE', 'ENSO', 'ERRINROSNE', 'ERRINRSMNE', 'EXP2NE', 'EXTROSNBNE', 'FLOSP2HH', 'FLOSP2HL', 'FLOSP2HM', 'FLOSP2TH', 'FLOSP2TL', 'FLOSP2TM', 'FREURONE', 'GENROSEBNE', 'GOTTFR', 'GROWTH', 'GULFNE', 'HAHN1', 'HATFLDANE', 'HATFLDBNE', 'HATFLDCNE', 'HATFLDDNE', 'HATFLDENE', 'HATFLDFLNE', 'HATFLDF', 'HATFLDG', 'HELIXNE', 'HIMMELBA', 'HIMMELBC', 'HIMMELBD', 'HIMMELBFNE', 'HS1NE', 'HS25NE', 'HS2NE', 'HS8', 'HYDCAR20', 'HYDCAR6', 'HYPCIR', 'INTEGREQ', 'INTEQNE', 'KOEBHELBNE', 'KOWOSBNE', 'KSS', 'LANCZOS1', 'LANCZOS2', 'LANCZOS3', 'LEVYMONE10', 'LEVYMONE5', 'LEVYMONE6', 'LEVYMONE7', 'LEVYMONE8', 'LEVYMONE9', 'LEVYMONE', 'LIARWHDNE', 'LINVERSENE', 'LSC1', 'LSC2', 'LUKSAN11', 'LUKSAN12', 'LUKSAN13', 'LUKSAN14', 'LUKSAN17', 'LUKSAN21', 'LUKSAN22', 'MANCINONE', 'METHANB8', 'METHANL8', 'MEYER3NE', 'MGH09', 'MGH10', 'MISRA1A', 'MISRA1B', 'MISRA1C', 'MISRA1D', 'MODBEALENE', 'MSQRTA', 'MSQRTB', 'MUONSINE', 'n10FOLDTR', 'NELSON', 'NONSCOMPNE', 'NYSTROM5', 'OSBORNE1', 'OSBORNE2', 'OSCIGRNE', 'OSCIPANE', 'PALMER1ANE', 'PALMER1BNE', 'PALMER1ENE', 'PALMER1NE', 'PALMER2ANE', 'PALMER2BNE', 'PALMER2ENE', 'PALMER3ANE', 'PALMER3BNE', 'PALMER3ENE', 'PALMER4ANE', 'PALMER4BNE', 'PALMER4ENE', 'PALMER5ANE', 'PALMER5BNE', 'PALMER5ENE', 'PALMER6ANE', 'PALMER6ENE', 'PALMER7ANE', 'PALMER7ENE', 'PALMER8ANE', 'PALMER8ENE', 'PENLT1NE', 'PENLT2NE', 'POROUS1', 'POROUS2', 'POWELLBS', 'POWELLSQ', 'POWERSUMNE', 'PRICE3NE', 'PRICE4NE', 'QINGNE', 'QR3D', 'RAT42', 'RAT43', 'RECIPE', 'REPEAT', 'RES', 'ROSZMAN1', 'RSNBRNE', 'SANTA', 'SEMICN2U', 'SEMICON1', 'SEMICON2', 'SPECANNE', 'SSBRYBNDNE', 'SSINE', 'THURBER', 'TQUARTICNE', 'VANDERM1', 'VANDERM2', 'VANDERM3', 'VANDERM4', 'VARDIMNE', 'VESUVIA', 'VESUVIO', 'VESUVIOU', 'VIBRBEAMNE', 'WATSONNE', 'WAYSEA1NE', 'WAYSEA2NE', 'YATP1CNE', 'YATP2CNE', 'YFITNE', 'ZANGWIL3'
 ]
 
-# To store all the feasibility problems discovered during runtime
+# To store all the feasibility problems including the known ones and the new ones
 feasibility = []
 
 # To store all the 'time out' problems
 timeout_problems = []
 
-# Output path (repository root)
+# Find problems that are parametric
+# The parametric problems list is also in optiprofiler's s2mpj directory
+para_file = os.path.join(repo_root, 'optiprofiler', 'problems', 's2mpj', 'list_of_parametric_problems_with_parameters_python.txt')
+if os.path.exists(para_file):
+    with open(para_file, 'r') as file:
+        para_problem_names = []
+        problem_argins = []
+        for line in file:
+            if line.strip() and not line.startswith('#'):
+                parts = [x.strip() for x in line.split(',')]
+                para_problem_names.append(parts[0])
+                problem_argins.append(parts[1:])
+else:
+    para_problem_names = []
+    problem_argins = []
+
+# Output path (repository root, where results will be saved)
 saving_path = repo_root
 
-
-class Logger:
-    """Dual-output logger that writes to both terminal and log file."""
+# Define the class logger
+class Logger(object):
     def __init__(self, logfile):
         self.terminal = sys.__stdout__
         self.log = logfile
-
     def write(self, message):
         self.terminal.write(message)
         try:
             self.log.write(message)
         except Exception as e:
             self.terminal.write(f"[Logger Error] {e}\n")
-
     def flush(self):
         self.terminal.flush()
         self.log.flush()
 
+# Record the log from terminal
+log_file = open(os.path.join(saving_path, 'log_python.txt'), 'w')
+sys.stdout = Logger(log_file)
+sys.stderr = Logger(log_file)
 
 def run_with_timeout(func, args, timeout_seconds):
-    """Execute a function with a timeout using SIGALRM."""
     def handler(signum, frame):
         raise TimeoutError(f"Function timed out after {timeout_seconds} seconds")
 
     signal.signal(signal.SIGALRM, handler)
     signal.alarm(timeout_seconds)
-
+    
     try:
         result = func(*args) if args else func()
         return result
     finally:
         signal.alarm(0)
 
+# Define a function to get information about a problem
+def get_problem_info(problem_name, known_feasibility, problem_argins=None):
 
-def get_problem_info(problem_name, known_feasibility):
-    """
-    Extract information about a single problem.
-    
-    Returns a dictionary containing problem metrics such as dimensions,
-    constraint counts, and function availability flags.
-    """
     print(f"Processing problem: {problem_name}")
 
     info_single = {
@@ -156,18 +134,30 @@ def get_problem_info(problem_name, known_feasibility):
         'isjcub': 0,
         'isjceq': 0,
         'ishcub': 0,
-        'ishceq': 0
-    }
-
-    # Try to load the problem with timeout protection
+        'ishceq': 0,
+        'argins': '',
+        'dims': '',
+        'mbs': '',
+        'mls': '',
+        'mus': '',
+        'mcons': '',
+        'mlcons': '',
+        'mnlcons': '',
+        'm_ubs': '',
+        'm_eqs': '',
+        'm_linear_ubs': '',
+        'm_linear_eqs': '',
+        'm_nonlinear_ubs': '',
+        'm_nonlinear_eqs': '',
+        'f0s': ''}
     try:
         p = run_with_timeout(s2mpj_load, (problem_name,), timeout)
     except TimeoutError:
         print(f"Timeout while loading problem {problem_name}.")
         timeout_problems.append(problem_name)
+        print(f"Skipping problem {problem_name} due to timeout.")
         return info_single
 
-    # Extract basic problem information
     try:
         info_single['ptype'] = p.ptype
         info_single['xtype'] = 'r'
@@ -187,85 +177,229 @@ def get_problem_info(problem_name, known_feasibility):
     except Exception as e:
         print(f"Error while getting problem info for {problem_name}: {e}")
 
-    # Evaluate the objective function to determine if it's a feasibility problem
     try:
         f = run_with_timeout(p.fun, (p.x0,), timeout)
         if problem_name == 'LIN':
             info_single['isfeasibility'] = 0
-            info_single['f0'] = np.nan
         elif np.size(f) == 0 or np.isnan(f) or problem_name in known_feasibility:
             info_single['isfeasibility'] = 1
-            info_single['f0'] = 0
             feasibility.append(problem_name)
         else:
             info_single['isfeasibility'] = 0
+        if problem_name == 'LIN':
+            info_single['f0'] = np.nan
+        elif np.size(f) == 0 or np.isnan(f) or (problem_name in known_feasibility and problem_name != 'HS8'):
+            info_single['f0'] = 0
+        else:
             info_single['f0'] = f
     except Exception as e:
         print(f"Error while evaluating function for {problem_name}: {e}")
         info_single['f0'] = 0
         info_single['isfeasibility'] = 1
         feasibility.append(problem_name)
-
-    # Check availability of gradient, Hessian, and constraint Jacobians/Hessians
+    
     if problem_name in feasibility:
         info_single['isgrad'] = 1
         info_single['ishess'] = 1
     else:
         try:
             g = run_with_timeout(p.grad, (p.x0,), timeout)
-            info_single['isgrad'] = 1 if g.size > 0 else 0
-        except Exception:
+            if g.size == 0:
+                info_single['isgrad'] = 0
+            else:
+                info_single['isgrad'] = 1
+        except Exception as e:
+            print(f"Error while evaluating gradient for {problem_name}: {e}")
             info_single['isgrad'] = 0
-
         try:
             h = run_with_timeout(p.hess, (p.x0,), timeout)
-            info_single['ishess'] = 1 if h.size > 0 else 0
-        except Exception:
+            if h.size == 0:
+                info_single['ishess'] = 0
+            else:
+                info_single['ishess'] = 1
+        except Exception as e:
+            print(f"Error while evaluating hessian for {problem_name}: {e}")
             info_single['ishess'] = 0
-
+    
     try:
         jc = run_with_timeout(p.jcub, (p.x0,), timeout)
-        info_single['isjcub'] = 1 if jc.size > 0 else 0
-    except Exception:
+        if jc.size == 0:
+            info_single['isjcub'] = 0
+        else:
+            info_single['isjcub'] = 1
+    except Exception as e:
+        print(f"Error while evaluating jcub for {problem_name}: {e}")
         info_single['isjcub'] = 0
-
+    
     try:
         jc = run_with_timeout(p.jceq, (p.x0,), timeout)
-        info_single['isjceq'] = 1 if jc.size > 0 else 0
-    except Exception:
+        if jc.size == 0:
+            info_single['isjceq'] = 0
+        else:
+            info_single['isjceq'] = 1
+    except Exception as e:
+        print(f"Error while evaluating jceq for {problem_name}: {e}")
         info_single['isjceq'] = 0
-
+    
     try:
         hc = run_with_timeout(p.hcub, (p.x0,), timeout)
-        info_single['ishcub'] = 1 if len(hc) > 0 else 0
-    except Exception:
+        if len(hc) == 0:
+            info_single['ishcub'] = 0
+        else:
+            info_single['ishcub'] = 1
+    except Exception as e:
+        print(f"Error while evaluating hcub for {problem_name}: {e}")
         info_single['ishcub'] = 0
-
+    
     try:
         hc = run_with_timeout(p.hceq, (p.x0,), timeout)
-        info_single['ishceq'] = 1 if len(hc) > 0 else 0
-    except Exception:
+        if len(hc) == 0:
+            info_single['ishceq'] = 0
+        else:
+            info_single['ishceq'] = 1
+    except Exception as e:
+        print(f"Error while evaluating hceq for {problem_name}: {e}")
         info_single['ishceq'] = 0
 
-    print(f"Finished processing problem {problem_name}.")
+    if problem_argins is None:
+        print(f"Finished processing problem {problem_name} without parameters.")
+        return info_single
+
+    # Collect additional information if the problem is parametric
+    print(f"Processing parametric problem: {problem_name} with arguments {problem_argins}")
+    # First handle two special cases:
+    # NUFFIELD,{5.0}{10,20,30,40,100}
+    # TRAINF,{1.5}{2}{11,51,101,201,501}
+    if problem_name == 'NUFFIELD':
+        fixed_argins = [5.0]
+        variable_argins = [10, 20, 30, 40, 100]
+    elif problem_name == 'TRAINF':
+        fixed_argins = [1.5, 2]
+        variable_argins = [11, 51, 101, 201, 501]
+    else:
+        fixed_argins = []
+        variable_argins = problem_argins
+
+    # Define a sub-function to process each argument (so that later we can use the ``run_with_timeout`` function)
+    def process_arg(problem_name, arg, fixed_argins):
+        try:
+            p = s2mpj_load(problem_name, *fixed_argins, arg)
+
+            result = {}
+            result['n'] = p.n
+            result['mb'] = p.mb
+            result['ml'] = sum(p.xl > -np.inf)
+            result['mu'] = sum(p.xu < np.inf)
+
+            try:
+                result['mcon'] = p.mcon
+            except AttributeError as e:
+                if "'Problem' object has no attribute '_m_nonlinear_ub'" in str(e):
+                    result['mcon'] = p.mlcon + p.m_nonlinear_ub + p.m_nonlinear_eq
+                else:
+                    raise e
+            
+            result['mlcon'] = p.mlcon
+            
+            try:
+                result['mnlcon'] = p.mnlcon
+            except AttributeError as e:
+                if "'Problem' object has no attribute '_m_nonlinear" in str(e):
+                    result['mnlcon'] = p.m_nonlinear_ub + p.m_nonlinear_eq
+                else:
+                    raise e
+            
+            result['m_ub'] = p.m_linear_ub + p.m_nonlinear_ub
+            result['m_eq'] = p.m_linear_eq + p.m_nonlinear_eq
+            result['m_linear_ub'] = p.m_linear_ub
+            result['m_linear_eq'] = p.m_linear_eq
+            result['m_nonlinear_ub'] = p.m_nonlinear_ub
+            result['m_nonlinear_eq'] = p.m_nonlinear_eq
+            
+            if problem_name in known_feasibility:
+                result['f0'] = 0
+            else:
+                f = p.fun(p.x0)
+                if np.size(f) == 0 or np.isnan(f):
+                    result['f0'] = 0
+                else:
+                    result['f0'] = f
+                    
+            return True, arg, result
+        except Exception as e:
+            print(f"Error processing argument {arg} for problem {problem_name}: {e}")
+            return False, arg, None
+
+    successful_args = []
+    for arg in variable_argins:
+        print(f"Processing argument: {arg} for problem: {problem_name}")
+        try:
+            success, processed_arg, result = run_with_timeout(process_arg, (problem_name, arg, fixed_argins), timeout)
+            if not success or result is None:
+                print(f"Failed to process argument {arg} for problem {problem_name}")
+                continue
+
+            successful_args.append(processed_arg)
+            info_single['dims'] += str(result['n']) + ' '
+            info_single['mbs'] += str(result['mb']) + ' '
+            info_single['mls'] += str(result['ml']) + ' '
+            info_single['mus'] += str(result['mu']) + ' '
+            info_single['mcons'] += str(result['mcon']) + ' '
+            info_single['mlcons'] += str(result['mlcon']) + ' '
+            info_single['mnlcons'] += str(result['mnlcon']) + ' '
+            info_single['m_ubs'] += str(result['m_ub']) + ' '
+            info_single['m_eqs'] += str(result['m_eq']) + ' '
+            info_single['m_linear_ubs'] += str(result['m_linear_ub']) + ' '
+            info_single['m_linear_eqs'] += str(result['m_linear_eq']) + ' '
+            info_single['m_nonlinear_ubs'] += str(result['m_nonlinear_ub']) + ' '
+            info_single['m_nonlinear_eqs'] += str(result['m_nonlinear_eq']) + ' '
+            info_single['f0s'] += str(result['f0']) + ' '
+        except TimeoutError:
+            print(f"Timeout while processing problem {problem_name} with argument {arg}.")
+            timeout_problems.append(problem_name + f" with arg {arg}")
+            continue
+        except Exception as e:
+            print(f"Error while processing problem {problem_name} with argument {arg}: {e}")
+            continue
+
+    if fixed_argins:
+        info_single['argins'] = ''.join(['{' + str(fa) + '}' for fa in fixed_argins])
+        info_single['argins'] += '{' + ' '.join(str(arg) for arg in successful_args) + '}'
+    else:
+        info_single['argins'] = ' '.join(str(arg) for arg in successful_args)
+
+    info_single['dims'] = info_single['dims'].strip()
+    info_single['mbs'] = info_single['mbs'].strip()
+    info_single['mls'] = info_single['mls'].strip()
+    info_single['mus'] = info_single['mus'].strip()
+    info_single['mcons'] = info_single['mcons'].strip()
+    info_single['mlcons'] = info_single['mlcons'].strip()
+    info_single['mnlcons'] = info_single['mnlcons'].strip()
+    info_single['m_ubs'] = info_single['m_ubs'].strip()
+    info_single['m_eqs'] = info_single['m_eqs'].strip()
+    info_single['m_linear_ubs'] = info_single['m_linear_ubs'].strip()
+    info_single['m_linear_eqs'] = info_single['m_linear_eqs'].strip()
+    info_single['m_nonlinear_ubs'] = info_single['m_nonlinear_ubs'].strip()
+    info_single['m_nonlinear_eqs'] = info_single['m_nonlinear_eqs'].strip()
+    info_single['f0s'] = info_single['f0s'].strip()
+
+    print(f"Finished processing problem {problem_name} with parameters.")
     return info_single
 
-
 if __name__ == "__main__":
-    # Set up logging to both terminal and file
-    log_file = open(os.path.join(saving_path, 'log_python.txt'), 'w')
-    sys.stdout = Logger(log_file)
-    sys.stderr = Logger(log_file)
-
-    # Process all problems and collect their information
+    # Save problem information into a csv file
     results = []
     for name in problem_names:
-        info = get_problem_info(name, known_feasibility)
+        if name in para_problem_names:
+            index = para_problem_names.index(name)
+            args = problem_argins[index] if index < len(problem_argins) else []
+        else:
+            args = None
+        info = get_problem_info(name, known_feasibility, args)
         results.append(info)
         sys.stdout.flush()
         sys.stderr.flush()
 
-    # Create DataFrame and filter out problems with 'unknown' values
     df = pd.DataFrame(results)
 
     def has_unknown_values(row):
@@ -273,30 +407,30 @@ if __name__ == "__main__":
             if str(value).strip().lower() == 'unknown':
                 return True
         return False
-
     unknown_mask = df.apply(has_unknown_values, axis=1)
     if unknown_mask.any():
         filtered_problems = df.loc[unknown_mask, 'problem_name'].tolist()
         print(f"Filtered out {len(filtered_problems)} problems with 'unknown' values:")
         for problem in filtered_problems:
             print(f"  - {problem}")
-
     df_clean = df[~unknown_mask]
 
-    # Save results to CSV
     df_clean.to_csv(os.path.join(saving_path, 'probinfo_python.csv'), index=False, na_rep='nan')
 
-    # Save feasibility problems list
-    with open(os.path.join(saving_path, 'feasibility_python.txt'), 'w') as f:
+    # Save 'feasibility' to txt file in the one line format with space separated values
+    feasibility_file = os.path.join(saving_path, 'feasibility_python.txt')
+    with open(feasibility_file, 'w') as f:
         f.write(' '.join(feasibility))
 
-    # Save timeout problems list
-    with open(os.path.join(saving_path, 'timeout_problems_python.txt'), 'w') as f:
+    # Save 'timeout_problems' to txt file in the one line format with space separated values
+    timeout_file = os.path.join(saving_path, 'timeout_problems_python.txt')
+    with open(timeout_file, 'w') as f:
         f.write(' '.join(timeout_problems))
 
     print("Script completed successfully.")
 
-    # Clean up logging
+    # Close the log file
     log_file.close()
-    sys.stdout = sys.__stdout__
-    sys.stderr = sys.__stderr__
+
+    sys.stdout = sys.__stdout__  # Reset stdout to default
+    sys.stderr = sys.__stderr__  # Reset stderr to default

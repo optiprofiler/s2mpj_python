@@ -26,15 +26,18 @@ jobs:
 
       - name: Sync and Filter Files
         run: |
-          # 1. Clone the upstream repository to a temporary directory
-          # We only need the latest commit (depth 1) to save bandwidth and time
+          # 1. Attempt to clone the upstream repository
+          # We check the exit code to ensure the clone was successful before proceeding.
           echo "Cloning upstream repository..."
-          git clone --depth 1 https://github.com/GrattonToint/S2MPJ.git temp_upstream
+          if ! git clone --depth 1 https://github.com/GrattonToint/S2MPJ.git temp_upstream; then
+            echo "::error::Failed to fetch upstream repository. Aborting sync to prevent data loss."
+            exit 1
+          fi
+
+          echo "Upstream cloned successfully. Syncing files..."
 
           # 2. Clean managed files in current workspace for fresh sync
-          # We purposefully only remove the specific files/folders we are syncing.
-          # This allows the user to keep other custom files (like README.md) in the root.
-          echo "Cleaning managed files matching upstream subset..."
+          # Only remove the specific files/folders we are syncing.
           mkdir -p src
           rm -rf src/python_problems src/list_of_python_problems src/s2mpjlib.py
 
@@ -66,13 +69,13 @@ jobs:
           rm -rf temp_upstream
 
           # 5. Commit and push the changes
-          git add .
+          git add src
           
           # Check if there are any changes staged for commit
-          # 'git diff --staged --quiet' returns 0 (true) if there are no changes
           if git diff --staged --quiet; then
-            echo "No changes detected. Skipping push."
+            echo "No changes detected. The 'src' folder is up to date."
           else
+            echo "Updates detected. Committing changes..."
             git commit -m "Auto-sync subset files from GrattonToint/S2MPJ"
             git push
           fi

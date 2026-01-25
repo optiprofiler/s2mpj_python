@@ -1,0 +1,74 @@
+name: Collect Problem Info
+
+# This workflow collects problem information from the S2MPJ Python problem set.
+# It extracts metrics like dimensions, constraint counts, and function values,
+# then saves the results to probinfo_python.csv in the repository root.
+
+on:
+  # Run after the sync workflow completes to ensure we have the latest problems
+  workflow_run:
+    workflows: ["Sync S2MPJ Python Subset"]
+    types:
+      - completed
+  # Allow manual triggering from the Actions tab
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  collect-info:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      # Step 1: Checkout the repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Step 2: Set up Python environment
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          check-latest: true
+
+      # Step 3: Install dependencies
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r .github/actions/collect_info/requirements.txt
+
+      # Step 4: Run the info collection script
+      - name: Collect problem information
+        run: python .github/actions/collect_info/s_getInfo.py
+
+      # Step 5: Configure git for committing
+      - name: Configure Git Identity
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+      # Step 6: Commit and push the updated CSV if there are changes
+      - name: Commit and push changes
+        run: |
+          git add probinfo_python.csv feasibility_python.txt timeout_problems_python.txt log_python.txt
+          
+          if git diff --staged --quiet; then
+            echo "No changes detected. The problem info is up to date."
+          else
+            echo "Updates detected. Committing changes..."
+            git commit -m "Auto-update problem info from S2MPJ Python"
+            git push
+          fi
+
+      # Step 7: Upload artifacts for debugging/archival
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: probinfo-files-python
+          path: |
+            probinfo_python.csv
+            feasibility_python.txt
+            timeout_problems_python.txt
+            log_python.txt

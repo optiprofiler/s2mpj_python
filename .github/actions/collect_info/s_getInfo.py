@@ -11,7 +11,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'optiprofiler'))
 
 # Add problems to the system path
 cwd = os.path.dirname(os.path.abspath(__file__))
-# sys.path.append(os.path.join(cwd, 'optiprofiler', 'python', 'optiprofiler', 'problem_libs', 's2mpj'))
+sys.path.append(os.path.join(cwd, 'optiprofiler', 'python'))
 from optiprofiler.problem_libs.s2mpj.s2mpj_tools import s2mpj_load
 
 # Set the timeout (seconds) for each problem to be loaded

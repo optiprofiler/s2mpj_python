@@ -18,7 +18,7 @@ from optiprofiler.problem_libs.s2mpj.s2mpj_tools import s2mpj_load
 timeout = 50
 
 cwd = os.path.dirname(os.path.abspath(__file__))
-filename = os.path.join(cwd, 'optiprofiler', 'problems', 's2mpj', 'src', 'list_of_python_problems')
+filename = os.path.join(cwd, 'src', 'list_of_python_problems')
 file = open(filename, 'r')
 # Collect the names of the problems from the file
 problem_names = [file.strip().replace('.py', '') for file in file.readlines() if file.strip() and not file.startswith('#')]

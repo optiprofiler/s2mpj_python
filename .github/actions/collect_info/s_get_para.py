@@ -12,7 +12,7 @@ def s_get_para(language='matlab', max_para=500):
     cwd = os.getcwd()
 
     # Search and copy the file 'list_of_matlab_problems' to the path './list_of_parametric_problems.txt'
-    src_file = 'optiprofiler/problems/s2mpj/src/list_of_' + language + '_problems'
+    src_file = os.path.join(cwd, 'src', 'list_of_' + language + '_problems')
     dst_file = 'list_of_parametric_problems_' + language + '.txt'
     shutil.copy(src_file, dst_file)
 
@@ -20,7 +20,7 @@ def s_get_para(language='matlab', max_para=500):
     names_file_path = os.path.join(cwd, dst_file)
 
     # Directory where the language files are located
-    language_files_folder = os.path.join(cwd, 'optiprofiler/problems/s2mpj/src', language + '_problems')
+    language_files_folder = os.path.join(cwd, 'src', language + '_problems')
 
     # Output file
     output_file_path = os.path.join(cwd, 'list_of_parametric_problems_with_parameters_' + language + '.txt')

@@ -118,15 +118,15 @@ def s2mpj_load(problem_name, *args):
     grad = lambda x: _getgrad(p, is_feasibility, x)
     hess = lambda x: _gethess(p, is_feasibility, x)
 
-    x0 = p.x0
-    xl = p.xlower
-    xu = p.xupper
+    x0 = p.x0.flatten()
+    xl = p.xlower.flatten()
+    xu = p.xupper.flatten()
     # We replace 1.0e+20 (which represents infinity) bounds with np.inf.
     xl = np.where(xl <= -1.0e+20, -np.inf, xl)
     xu = np.where(xu >= 1.0e+20, np.inf, xu)
 
-    cl = p.clower if hasattr(p, 'clower') else None
-    cu = p.cupper if hasattr(p, 'cupper') else None
+    cl = p.clower.flatten() if hasattr(p, 'clower') else None
+    cu = p.cupper.flatten() if hasattr(p, 'cupper') else None
     if cl is not None:
         cl = np.where(cl <= -1.0e+20, -np.inf, cl)
     if cu is not None:
@@ -148,11 +148,12 @@ def s2mpj_load(problem_name, *args):
     buf = io.StringIO()
     with redirect_stdout(buf):
         try:
-            cx, jx = p.cJx(x0)[:2]
+            cx, jx = p.cJx(p.x0)[:2]
             if hasattr(cx, 'toarray'):
                 cx = cx.toarray()
             if hasattr(jx, 'toarray'):
                 jx = jx.toarray()
+            cx = cx.flatten()
             bx = jx @ x0 - cx
         except Exception:
             jx = None
@@ -193,13 +194,13 @@ def s2mpj_load(problem_name, *args):
     def ceq(x):
         if idx_ceq.size == 0: return None
         y = _getcx(p, x)
-        if y is None: return None
+        if y is None: return np.full(idx_ceq.size, np.nan)
         z = y[idx_ceq] - cu[idx_ceq]
-        return None if (hasattr(z, "size") and z.size == 0) else z
+        return np.full(idx_ceq.size, np.nan) if (hasattr(z, "size") and z.size == 0) else z
     def cub(x):
         if idx_cle.size == 0 and idx_cge.size == 0: return None
         y = _getcx(p, x)
-        if y is None: return None
+        if y is None: return np.full(idx_cle.size + idx_cge.size, np.nan)
         le = y[idx_cle] - cu[idx_cle] if idx_cle.size > 0 else None
         ge = y[idx_cge] - cl[idx_cge] if idx_cge.size > 0 else None
         if le is None and ge is None: return None
@@ -209,12 +210,12 @@ def s2mpj_load(problem_name, *args):
     def hceq(x):
         if idx_ceq.size == 0: return []
         Hx = _getHx(p, x)
-        if Hx is None: raise RuntimeError("Hessian evaluation failed")
+        if Hx is None: return [np.full((x.size, x.size), np.nan)] * idx_ceq.size
         return [Hx[i] for i in idx_ceq]
     def hcub(x):
         if idx_cle.size == 0 and idx_cge.size == 0: return []
         Hx = _getHx(p, x)
-        if Hx is None: raise RuntimeError("Hessian evaluation failed")
+        if Hx is None: return [np.full((x.size, x.size), np.nan)] * (idx_cle.size + idx_cge.size)
         le = [Hx[i] for i in idx_cle] if idx_cle.size > 0 else []
         ge = [Hx[i] for i in idx_cge] if idx_cge.size > 0 else []
         return le + ge
@@ -222,12 +223,12 @@ def s2mpj_load(problem_name, *args):
     def jceq(x):
         if idx_ceq.size == 0: return np.empty((0, p.n))
         Jx = _getJx(p, x)
-        if Jx is None: return None
+        if Jx is None: return np.full((idx_ceq.size, x.size), np.nan)
         return Jx[idx_ceq, :]
     def jcub(x):
         if idx_cle.size == 0 and idx_cge.size == 0: return np.empty((0, p.n))
         Jx = _getJx(p, x)
-        if Jx is None: return None
+        if Jx is None: return np.full((idx_cle.size + idx_cge.size, x.size), np.nan)
         le = Jx[idx_cle, :] if idx_cle.size > 0 else None
         ge = Jx[idx_cge, :] if idx_cge.size > 0 else None
         if le is None and ge is None: return np.empty((0, p.n))
@@ -481,14 +482,16 @@ def s2mpj_select(options):
 def _getfun(p, is_feasibility, problem_name, x):
     if is_feasibility and problem_name != 'HS8':
         # Note that 'HS8' has a constant objective function (-1).
-        f = 0
+        f = 0.0
     else:
         buf = io.StringIO()
         with redirect_stdout(buf):
             try:
                 f = p.fx(x)
+                if hasattr(f, 'item'):
+                    f = f.item()
             except Exception:
-                f = np.empty(0)
+                f = np.nan
     return f
 
 def _getgrad(p, is_feasibility, x):
@@ -500,8 +503,9 @@ def _getgrad(p, is_feasibility, x):
             try:
                 _, g = p.fgx(x)
                 g = g.toarray() if hasattr(g, 'toarray') else g
+                g = g.flatten()
             except Exception:
-                g = None
+                g = np.full(x.size, np.nan)
     return g
 
 def _gethess(p, is_feasibility, x):
@@ -513,9 +517,8 @@ def _gethess(p, is_feasibility, x):
             try:
                 _, _, h = p.fgHx(x)
                 h = h.toarray() if hasattr(h, 'toarray') else h
-            except Exception as e:
-                print(f"Error eval Hx: {e}")
-                h = None
+            except Exception:
+                h = np.full((x.size, x.size), np.nan)
     return h
 
 def _getcx(p, x):
@@ -524,8 +527,8 @@ def _getcx(p, x):
         try:
             c = p.cx(x)
             c = c.toarray() if hasattr(c, 'toarray') else c
-        except Exception as e:
-            print(f"Error eval cx: {e}")
+            c = c.flatten()
+        except Exception:
             c = None
     return c
 
@@ -535,8 +538,7 @@ def _getJx(p, x):
         try:
             _, j = p.cJx(x)[:2]
             j = j.toarray() if hasattr(j, 'toarray') else j
-        except Exception as e:
-            print(f"Error eval Jx: {e}")
+        except Exception:
             j = None
     return j
 
@@ -548,7 +550,6 @@ def _getHx(p, x):
             for i in range(len(h)):
                 if hasattr(h[i], 'toarray'):
                     h[i] = h[i].toarray()
-        except Exception as e:
-                print(f"Error eval Hx: {e}")
-                h = None
+        except Exception:
+            h = None
         return h

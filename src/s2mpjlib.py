@@ -374,14 +374,14 @@ class CUTEst_problem:
             
             Htimesx = self.H .dot(x)
             if nargout ==  1:
-                fx += 0.5 * x.T .dot(Htimesx)
+                fx += float(np.array(0.5 * x.T .dot(Htimesx)).item())
             elif nargout == 2:
                 gx += Htimesx
-                fx += 0.5 * x.T .dot(Htimesx)
+                fx += float(np.array(0.5 * x.T .dot(Htimesx)).item())
             elif nargout == 3:
                 Htimesx = self.H .dot(x);
                 gx += Htimesx
-                fx += 0.5 * x.T .dot(Htimesx)
+                fx += float(np.array(0.5 * x.T .dot(Htimesx)).item())
                 Hx += self.H
                 
         if debug: #D
@@ -1005,6 +1005,12 @@ def find( lst, condition ):
 
 def arrset( arr, index, value ):
     
+    if hasattr(value, 'item') and not isinstance(value, (float, int, complex, np.number)):
+        try:
+            if value.size == 1:
+                value = value.item()
+        except:
+            pass
     if isinstance( index, np.ndarray):
         maxind = np.max( index )
     else:

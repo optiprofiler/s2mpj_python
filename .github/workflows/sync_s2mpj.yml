@@ -39,7 +39,7 @@ jobs:
           # 2. Clean managed files in current workspace for fresh sync
           # Only remove the specific files/folders we are syncing.
           mkdir -p src
-          rm -rf src/python_problems src/list_of_python_problems src/s2mpjlib.py
+          rm -rf src/python_problems src/list_of_python_problems
 
           # 3. Copy only the specific files/folders we want from the temporary upstream directory
           echo "Copying selected files..."
@@ -56,13 +56,6 @@ jobs:
             cp temp_upstream/list_of_python_problems src/
           else 
             echo "::warning::File 'list_of_python_problems' not found in upstream"
-          fi
-
-          # Copy the 's2mpjlib.py' file
-          if [ -f "temp_upstream/s2mpjlib.py" ]; then
-            cp temp_upstream/s2mpjlib.py src/
-          else
-             echo "::warning::File 's2mpjlib.py' not found in upstream"
           fi
 
           # 4. Remove the temporary upstream directory

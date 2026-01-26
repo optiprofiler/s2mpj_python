@@ -182,7 +182,6 @@ def s2mpj_load(problem_name, *args):
     beq = bx[idx_aeq] + cu[idx_aeq] if bx is not None and idx_aeq.size > 0 else None
     bub = np.concatenate([bx[idx_aub_le] + cu[idx_aub_le], -bx[idx_aub_ge] - cl[idx_aub_ge]]) if bx is not None and (idx_aub_le.size > 0 or idx_aub_ge.size > 0) else None
 
-    getidx = lambda y, idx: y[idx] if (y is not None and idx.size > 0) else None
     # Construct nonlinear constraint functions
     # Remind that in S2MPJ, the constraints are defined as:
     #  cl <= c(x) <= cu
@@ -192,32 +191,49 @@ def s2mpj_load(problem_name, *args):
     #  cub(x) = [c(x)[idx_cle] - cu[idx_cle];
     #           -c(x)[idx_cge] + cl[idx_cge]] <= 0
     def ceq(x):
+        if idx_ceq.size == 0: return None
         y = _getcx(p, x)
-        if idx_ceq.size > 0:
-            z = getidx(y, idx_ceq) - cu[idx_ceq]
-        else:
-            z = None
-        return None if z is None or (hasattr(z, "size") and z.size == 0) else z
+        if y is None: return None
+        z = y[idx_ceq] - cu[idx_ceq]
+        return None if (hasattr(z, "size") and z.size == 0) else z
     def cub(x):
+        if idx_cle.size == 0 and idx_cge.size == 0: return None
         y = _getcx(p, x)
-        le = getidx(y, idx_cle) - cu[idx_cle] if idx_cle.size > 0 else None
-        ge = getidx(y, idx_cge) - cl[idx_cge] if idx_cge.size > 0 else None
-        if le is None and ge is None:
-            return None
-        if ge is None:
-            return le
-        if le is None:
-            return -ge
+        if y is None: return None
+        le = y[idx_cle] - cu[idx_cle] if idx_cle.size > 0 else None
+        ge = y[idx_cge] - cl[idx_cge] if idx_cge.size > 0 else None
+        if le is None and ge is None: return None
+        if ge is None: return le
+        if le is None: return -ge
         return np.concatenate([le, -ge])
+    def hceq(x):
+        if idx_ceq.size == 0: return []
+        Hx = _getHx(p, x)
+        if Hx is None: raise RuntimeError("Hessian evaluation failed")
+        return [Hx[i] for i in idx_ceq]
+    def hcub(x):
+        if idx_cle.size == 0 and idx_cge.size == 0: return []
+        Hx = _getHx(p, x)
+        if Hx is None: raise RuntimeError("Hessian evaluation failed")
+        le = [Hx[i] for i in idx_cle] if idx_cle.size > 0 else []
+        ge = [Hx[i] for i in idx_cge] if idx_cge.size > 0 else []
+        return le + ge
 
-    getidx_list = lambda y, idx: [y[i] for i in idx] if y is not None else []
-    hceq = lambda x: getidx_list(_getHx(p, x), idx_ceq)
-    hcub = lambda x: getidx_list(_getHx(p, x), idx_cle) + getidx_list(_getHx(p, x), idx_cge)
-
-    getidx_mat = lambda y, idx: y[idx, :] if y is not None else None
-    jceq = lambda x: getidx_mat(_getJx(p, x), idx_ceq)
-    jcub = lambda x: np.vstack([getidx_mat(_getJx(p, x), idx_cle),
-                                -getidx_mat(_getJx(p, x), idx_cge)]) if getidx_mat(_getJx(p, x), idx_cle) is not None else None
+    def jceq(x):
+        if idx_ceq.size == 0: return np.empty((0, p.n))
+        Jx = _getJx(p, x)
+        if Jx is None: return None
+        return Jx[idx_ceq, :]
+    def jcub(x):
+        if idx_cle.size == 0 and idx_cge.size == 0: return np.empty((0, p.n))
+        Jx = _getJx(p, x)
+        if Jx is None: return None
+        le = Jx[idx_cle, :] if idx_cle.size > 0 else None
+        ge = Jx[idx_cge, :] if idx_cge.size > 0 else None
+        if le is None and ge is None: return np.empty((0, p.n))
+        if ge is None: return le
+        if le is None: return -ge
+        return np.vstack([le, -ge])
 
     # Construct the Problem instance.
     problem = Problem(fun, x0, name=name, xl=xl, xu=xu, aub=aub, bub=bub, aeq=aeq, beq=beq, cub=cub, ceq=ceq, grad=grad, hess=hess, jcub=jcub, jceq=jceq, hcub=hcub, hceq=hceq)
@@ -497,7 +513,8 @@ def _gethess(p, is_feasibility, x):
             try:
                 _, _, h = p.fgHx(x)
                 h = h.toarray() if hasattr(h, 'toarray') else h
-            except Exception:
+            except Exception as e:
+                print(f"Error eval Hx: {e}")
                 h = None
     return h
 
@@ -507,7 +524,8 @@ def _getcx(p, x):
         try:
             c = p.cx(x)
             c = c.toarray() if hasattr(c, 'toarray') else c
-        except Exception:
+        except Exception as e:
+            print(f"Error eval cx: {e}")
             c = None
     return c
 
@@ -517,7 +535,8 @@ def _getJx(p, x):
         try:
             _, j = p.cJx(x)[:2]
             j = j.toarray() if hasattr(j, 'toarray') else j
-        except Exception:
+        except Exception as e:
+            print(f"Error eval Jx: {e}")
             j = None
     return j
 
@@ -529,6 +548,7 @@ def _getHx(p, x):
             for i in range(len(h)):
                 if hasattr(h[i], 'toarray'):
                     h[i] = h[i].toarray()
-        except Exception:
+        except Exception as e:
+                print(f"Error eval Hx: {e}")
                 h = None
         return h

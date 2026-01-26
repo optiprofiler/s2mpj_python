@@ -427,13 +427,13 @@ class CUTEst_problem:
             #  Evaluate the linear term, if any.
 
             if hasattr(self,"gconst") and ig < len(self.gconst) and not self.gconst[ig] is None:
-                fin = float(-self.gconst[ig])
+                fin = float(np.array(-self.gconst[ig]).item())
             else:
                 fin = 0
             if has_A and ig < sA1:
                 gin           = np.zeros( (n, 1) )
                 gin[:sA2, :1] = self.A[ ig, :sA2 ].T.toarray()
-                fin           = float( fin + gin.T .dot(x) )
+                fin           = float(np.array( fin + gin.T .dot(x) ).item())
             elif nargout >= 2:
                 gin =  np.zeros(( n, 1 ))
 
@@ -448,7 +448,7 @@ class CUTEst_problem:
                     iel    = self.grelt[ ig ][ iiel ]         #  the element's index
                     efname = self.elftype[ iel ]              #  the element's ftype
                     irange = [iv for iv in self.elvar[ iel ]] #  the elemental variable's indeces 
-                    xiel   = x[ np.array(irange) ]            #  the elemental variable's values
+                    xiel   = x[ np.array(irange) ].flatten().flatten()   #  the elemental variable's values
 
                     if  hasattr( self, 'grelw' ) and ig <= len( self.grelw ) and not self.grelw[ig] is None :
                         has_weights = True;
@@ -621,11 +621,11 @@ class CUTEst_problem:
                     print( "ig = ", ig, "  cx(final) = ", cx )#D
         if isobj:
             if nargout == 1:
-                return float( fx )
+                return float(np.array(fx).item())
             elif nargout == 2:
-                return float( fx ), gx.reshape(-1,1)
+                return float(np.array(fx).item()), gx.reshape(-1,1)
             elif nargout == 3:
-                return float( fx ), gx.reshape(-1,1), Hx
+                return float(np.array(fx).item()), gx.reshape(-1,1), Hx
         else:
             if nargout == 1:
                 return cx
@@ -711,7 +711,7 @@ class CUTEst_problem:
         #  Evaluate the quadratic term, if any.
 
         if mode == "Hv" and hasattr( self, "H" ):
-            HJv += self.H.dot(v);
+            HJv += self.H.dot(v).item();
         
         if debug: #D
             print( "HJv(quadratic) = ", HJv )
@@ -750,13 +750,13 @@ class CUTEst_problem:
             #  Evaluate the linear term, if any.
 
             if hasattr( self, "gconst" ) and ig < len( self.gconst ) and not self.gconst[ ig ] is None:
-                fin = float(-self.gconst[ ig ] )
+                fin = float(np.array(-self.gconst[ ig ] ).item())
             else:
                 fin = 0.0
             gin = np.zeros((n,1))
             if has_A and ig < sA1:
                 gin[:sA2, :1] = self.A[ ig, :sA2 ].T.toarray()
-                fin           = float(fin + gin.T .dot(x))
+                fin           = float(np.array(fin + gin.T .dot(x)).item())
 
             if debug:
                 print( "ig = ", ig, "  fin(linear)", fin ) #D
@@ -768,7 +768,7 @@ class CUTEst_problem:
                     iel    = self.grelt[ ig ][ iiel ]          #  the element's index
                     efname = self.elftype[ iel ];              #  the element's ftype
                     irange = [iv for iv in self.elvar[ iel ]]  #  the elemental variable's indeces
-                    xiel   = x[ np.array(irange) ]             #  the elemental variable's values
+                    xiel   = x[ np.array(irange) ].flatten().flatten()   #  the elemental variable's values
 
                     if  hasattr( self, 'grelw' ) and ig <= len( self.grelw ) and not self.grelw[ig] is None :
                         has_weights = 1;
@@ -831,7 +831,7 @@ class CUTEst_problem:
                 else:
                     fa, grada, Hessa = eval('self.'+egname+'( self, 3, fin, ig )' )
                     sgin = lil_matrix(gin);
-                    HJv  += ( ( Hessa * sgin) * (sgin.transpose().dot(v)) + grada * Hinv) / gsc
+                    HJv  += ( ( Hessa * sgin) * (sgin.transpose().dot(v).item()) + grada * Hinv) / gsc
             elif mode == "HIv":
                 if egname == "TRIVIAL":
                     ic  += 1
@@ -840,7 +840,7 @@ class CUTEst_problem:
                     fa, grada, Hessa = eval('self.'+egname+'( self, 3, fin, ig )' )
                     sgin = lil_matrix(gin);
                     ic  += 1
-                    HJv += y[ic] * ( ( Hessa * sgin) * (sgin.transpose().dot(v)) + grada * Hinv) / gsc
+                    HJv += y[ic] * ( ( Hessa * sgin) * (sgin.transpose().dot(v).item()) + grada * Hinv) / gsc
             elif  mode == "Jv":
                 ic += 1
                 if derlvl >= 1:
@@ -883,7 +883,7 @@ class CUTEst_problem:
             if len( gconlist ):
                 c   = self.evalgrsum( False, gconlist, x, 1 )
                 Lxy = Lxy + y.T.dot(c)
-            return float(Lxy)
+            return float(np.array(Lxy).item())
         elif nargout == 2:
             if len( gobjlist ) or hasattr( self, "H" ):
                 Lxy, Lgxy = self.evalgrsum( True, gobjlist, x, 2 )
@@ -894,7 +894,7 @@ class CUTEst_problem:
                 c, J = self.evalgrsum( False, gconlist, x, 2 )
                 Lxy  = Lxy + y.T.dot(c)
                 Lgxy = Lgxy  + J.T.dot(y)
-            return float(Lxy), Lgxy
+            return float(np.array(Lxy).item()), Lgxy
         elif nargout == 3:
             if len( gobjlist ) or hasattr( self, "H" ):
                 Lxy, Lgxy, LgHxy = self.evalgrsum( True, gobjlist, x, 3 )
@@ -909,7 +909,7 @@ class CUTEst_problem:
                 Lgxy = Lgxy  + J.T.dot(y)
                 for ig in range( len( gconlist ) ):
                     LgHxy = LgHxy + y[ig,0] * cHi[ig]
-            return float(Lxy), Lgxy.reshape(-1,1), LgHxy
+            return float(np.array(Lxy).item()), Lgxy.reshape(-1,1), LgHxy
         
     #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     #

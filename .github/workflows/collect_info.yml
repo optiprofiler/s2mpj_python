@@ -82,6 +82,13 @@ jobs:
             cd ..
             s_getInfo
 
+      - name: Install OptiProfiler (python) with develop mode
+        if: matrix.language == 'python'
+        run: |
+          cd optiprofiler
+          pip install -e .
+          cd ..
+
       - name: Run Python script
         if: matrix.language == 'python'
         run: |

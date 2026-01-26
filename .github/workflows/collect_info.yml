@@ -1,9 +1,13 @@
-name: Collect Problem Info
+name: Collect Info
 
-# This workflow collects problem information from the S2MPJ Python problem set.
-# It extracts metrics like dimensions, constraint counts, and function values,
-# then saves the results to probinfo_python.csv in the repository root.
-
+# This workflow do the following:
+# 1. Checkout the repository
+# 2. Checkout the optiprofiler repository
+# 3. Copy files in .github/actions/collect_info to the root directory
+# 4. Set up python and install dependencies
+# 5. Run in python 's_get_para.py' to get parametric problems for python
+# 6. Run in python 's_getInfo.py' to get problem information for python
+# 7. Upload 'probinfo_python.csv', 'feasibility_python.txt', 'timeout_problems_python.txt', and 'log_python.txt' as artifacts
 on:
   # Run after the sync workflow completes to ensure we have the latest problems
   workflow_run:
@@ -13,67 +17,78 @@ on:
   # Allow manual triggering from the Actions tab
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
-  collect-info:
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 360
+    # runs-on: self-hosted
+    # timeout-minutes: 1440
+
+    strategy:
+        matrix:
+            language: [python]
 
     steps:
-      # Step 1: Checkout the repository
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      # Step 2: Set up Python environment
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          check-latest: true
-
-      # Step 3: Checkout OptiProfiler (contains required class definitions)
+      
       - name: Checkout OptiProfiler
         uses: actions/checkout@v4
         with:
           repository: optiprofiler/optiprofiler
           path: optiprofiler
-          submodules: recursive
-          ref: python
+          submodules: recursive 
+          ref: reorganize
 
-      # Step 4: Install dependencies
+      - name: Copy collect_info files to root directory
+        run: |
+          cp -r .github/actions/collect_info/* .
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
       - name: Install Python dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r .github/actions/collect_info/requirements.txt
-          pip install -e optiprofiler
+            python -m pip install --upgrade pip
+            pip install -r requirements.txt
 
-      # Step 5: Run the info collection script
-      - name: Collect problem information
-        run: python .github/actions/collect_info/s_getInfo.py
-
-      # Step 5: Configure git for committing
-      - name: Configure Git Identity
+      - name: Get parametric problems in Python
+        if: matrix.language == 'python'
         run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          python3 -m s_get_para 'python'
 
-      # Step 6: Commit and push the updated CSV if there are changes
-      - name: Commit and push changes
+      - name: Get parametric problems in MATLAB
+        if: matrix.language == 'matlab'
         run: |
-          git add probinfo_python.csv feasibility_python.txt timeout_problems_python.txt log_python.txt
+          python3 -m s_get_para 'matlab'
+
+      - name: Set up MATLAB
+        if: matrix.language == 'matlab'
+        uses: matlab-actions/setup-matlab@v2.1.1
+        with:
+          release: R2024a
+          products: Optimization_Toolbox Parallel_Computing_Toolbox
+      
+      - name: Run setup and run script in MATLAB
+        if: matrix.language == 'matlab'
+        uses: matlab-actions/run-command@v2.1.1
+        with:
+          command: |
+            cd optiprofiler
+            options = struct('install_matcutest', false)
+            setup(options)
+            cd ..
+            s_getInfo
+
+      - name: Run Python script
+        if: matrix.language == 'python'
+        run: |
+          python3 s_getInfo.py
           
-          if git diff --staged --quiet; then
-            echo "No changes detected. The problem info is up to date."
-          else
-            echo "Updates detected. Committing changes..."
-            git commit -m "Auto-update problem info from S2MPJ Python"
-            git push
-          fi
-
-      # Step 7: Upload artifacts for debugging/archival
-      - name: Upload artifacts
+      - name: Upload Python artifacts
+        if: matrix.language == 'python'
         uses: actions/upload-artifact@v4
         with:
           name: probinfo-files-python
@@ -82,3 +97,16 @@ jobs:
             feasibility_python.txt
             timeout_problems_python.txt
             log_python.txt
+      
+      - name: Upload MATLAB artifacts
+        if: matrix.language == 'matlab'
+        uses: actions/upload-artifact@v4
+        with:
+          name: probinfo-files-matlab
+          path: |
+            probinfo_matlab.csv
+            probinfo_matlab.mat
+            probinfo_matlab.txt
+            feasibility_matlab.txt
+            timeout_problems_matlab.txt
+            log_matlab.txt

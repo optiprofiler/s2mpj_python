@@ -1,10 +1,3 @@
-"""
-s_getInfo.py - Collect problem information from S2MPJ Python problem set
-
-This script is adapted from s2mpj_tools/s_getInfo.py for use in GitHub Actions.
-It uses optiprofiler's s2mpj module to load and analyze problems.
-"""
-
 import numpy as np
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
@@ -14,24 +7,21 @@ import signal
 # Add optiprofiler to the system path
 import os
 import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), 'optiprofiler'))
 
-# Get the repository root directory (three levels up from this script)
+# Add problems to the system path
 cwd = os.path.dirname(os.path.abspath(__file__))
-repo_root = os.path.abspath(os.path.join(cwd, '..', '..', '..'))
-
-# Add optiprofiler to the system path (checked out by GitHub Actions)
-sys.path.append(os.path.join(repo_root, 'optiprofiler'))
-sys.path.append(os.path.join(repo_root, 'optiprofiler', 'problems'))
-from problems.s2mpj.s2mpj_tools import s2mpj_load
+# sys.path.append(os.path.join(cwd, 'optiprofiler', 'python', 'optiprofiler', 'problem_libs', 's2mpj'))
+from optiprofiler.problem_libs.s2mpj.s2mpj_tools import s2mpj_load
 
 # Set the timeout (seconds) for each problem to be loaded
 timeout = 50
 
-# Read problem list from optiprofiler's s2mpj module (this is where the problems actually are)
-filename = os.path.join(repo_root, 'optiprofiler', 'problems', 's2mpj', 'src', 'list_of_python_problems')
+cwd = os.path.dirname(os.path.abspath(__file__))
+filename = os.path.join(cwd, 'optiprofiler', 'problems', 's2mpj', 'src', 'list_of_python_problems')
 file = open(filename, 'r')
 # Collect the names of the problems from the file
-problem_names = [f.strip().replace('.py', '') for f in file.readlines() if f.strip() and not f.startswith('#')]
+problem_names = [file.strip().replace('.py', '') for file in file.readlines() if file.strip() and not file.startswith('#')]
 file.close()
 
 # Exclude some problems
@@ -54,23 +44,25 @@ feasibility = []
 timeout_problems = []
 
 # Find problems that are parametric
-# The parametric problems list is also in optiprofiler's s2mpj directory
-para_file = os.path.join(repo_root, 'optiprofiler', 'problems', 's2mpj', 'list_of_parametric_problems_with_parameters_python.txt')
-if os.path.exists(para_file):
-    with open(para_file, 'r') as file:
-        para_problem_names = []
-        problem_argins = []
-        for line in file:
-            if line.strip() and not line.startswith('#'):
-                parts = [x.strip() for x in line.split(',')]
-                para_problem_names.append(parts[0])
-                problem_argins.append(parts[1:])
-else:
+filename = os.path.join(cwd, 'list_of_parametric_problems_with_parameters_python.txt')
+# Scan each line, each line only has one problem name, which ends before the first comma
+# Give the rest to problem_argins
+# In txt file, each line looks like:
+# ALJAZZAF,3,100,1000,10000
+# or
+# TRAINF,{1.5}{2}{11,51,101,01,501,1001,5001,10001}
+# ALJAZZAF and TRAINF are problem names
+# Then let argins be the rest after the problem name if the problem name is found
+with open(filename, 'r') as file:
     para_problem_names = []
     problem_argins = []
+    for line in file:
+        if line.strip() and not line.startswith('#'):
+            parts = [x.strip() for x in line.split(',')]
+            para_problem_names.append(parts[0])
+            problem_argins.append(parts[1:])
 
-# Output path (repository root, where results will be saved)
-saving_path = repo_root
+saving_path = cwd
 
 # Define the class logger
 class Logger(object):

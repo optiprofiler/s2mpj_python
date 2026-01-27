@@ -3,6 +3,7 @@ import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from multiprocessing import Process, Queue
 import signal
+import shutil
 
 # Add optiprofiler to the system path
 import os
@@ -43,6 +44,19 @@ feasibility = []
 # To store all the 'time out' problems
 timeout_problems = []
 
+# Helper function to append to txt files
+def append_to_txt(file_path, value):
+    try:
+        if os.path.exists(file_path):
+            with open(file_path, 'r') as f:
+                existing = [line.strip() for line in f.readlines()]
+            if value in existing:
+                return
+        with open(file_path, 'a') as f:
+            f.write(value + '\n')
+    except Exception as e:
+        print(f"Error appending to {file_path}: {e}")
+
 # Find problems that are parametric
 filename = os.path.join(cwd, 'list_of_parametric_problems_with_parameters_python.txt')
 # Scan each line, each line only has one problem name, which ends before the first comma
@@ -80,7 +94,7 @@ class Logger(object):
         self.log.flush()
 
 # Record the log from terminal
-log_file = open(os.path.join(saving_path, 'log_python.txt'), 'w')
+log_file = open(os.path.join(saving_path, 'log_python_temp.txt'), 'a')
 sys.stdout = Logger(log_file)
 sys.stderr = Logger(log_file)
 
@@ -147,6 +161,7 @@ def get_problem_info(problem_name, known_feasibility, problem_argins=None):
     except TimeoutError:
         print(f"Timeout while loading problem {problem_name}.")
         timeout_problems.append(problem_name)
+        append_to_txt(os.path.join(saving_path, 'timeout_problems_python_temp.txt'), problem_name)
         print(f"Skipping problem {problem_name} due to timeout.")
         return info_single
 
@@ -176,6 +191,7 @@ def get_problem_info(problem_name, known_feasibility, problem_argins=None):
         elif np.size(f) == 0 or np.isnan(f) or problem_name in known_feasibility:
             info_single['isfeasibility'] = 1
             feasibility.append(problem_name)
+            append_to_txt(os.path.join(saving_path, 'feasibility_python_temp.txt'), problem_name)
         else:
             info_single['isfeasibility'] = 0
         if problem_name == 'LIN':
@@ -189,6 +205,7 @@ def get_problem_info(problem_name, known_feasibility, problem_argins=None):
         info_single['f0'] = 0
         info_single['isfeasibility'] = 1
         feasibility.append(problem_name)
+        append_to_txt(os.path.join(saving_path, 'feasibility_python_temp.txt'), problem_name)
     
     if problem_name in feasibility:
         info_single['isgrad'] = 1
@@ -349,6 +366,7 @@ def get_problem_info(problem_name, known_feasibility, problem_argins=None):
         except TimeoutError:
             print(f"Timeout while processing problem {problem_name} with argument {arg}.")
             timeout_problems.append(problem_name + f" with arg {arg}")
+            append_to_txt(os.path.join(saving_path, 'timeout_problems_python_temp.txt'), problem_name + f" with arg {arg}")
             continue
         except Exception as e:
             print(f"Error while processing problem {problem_name} with argument {arg}: {e}")
@@ -379,45 +397,96 @@ def get_problem_info(problem_name, known_feasibility, problem_argins=None):
     return info_single
 
 if __name__ == "__main__":
-    # Save problem information into a csv file
-    results = []
+    csv_file = os.path.join(saving_path, 'probinfo_python.csv')
+    csv_file_temp = os.path.join(saving_path, 'probinfo_python_temp.csv')
+    current_prob_file = os.path.join(saving_path, 'current_problem.txt')
+    exclude_file = os.path.join(saving_path, 'exclude_python.txt')
+
+    # 1. Crash Detection: If current_problem.txt exists, the previous run crashed on that problem.
+    if os.path.exists(current_prob_file):
+        with open(current_prob_file, 'r') as f:
+            crashed_prob = f.read().strip()
+        if crashed_prob:
+            print(f"Detected crash during previous run on problem: {crashed_prob}. Adding to exclude list.")
+            with open(exclude_file, 'a') as f:
+                f.write(crashed_prob + '\n')
+        try:
+            os.remove(current_prob_file)
+        except:
+            pass
+
+    # 2. Load existing exclusions
+    if os.path.exists(exclude_file):
+        with open(exclude_file, 'r') as f:
+            for line in f:
+                ex = line.strip()
+                if ex and ex not in problem_exclude:
+                    problem_exclude.append(ex)
+    
+    # Update problem_names by removing excluded ones
+    problem_names = [name for name in problem_names if name not in problem_exclude]
+
+    # 3. Resume: Find which problems are already completed
+    completed_problems = set()
+    if os.path.exists(csv_file_temp):
+        try:
+            existing_df = pd.read_csv(csv_file_temp, usecols=['problem_name'])
+            completed_problems = set(existing_df['problem_name'].tolist())
+            print(f"Found {len(completed_problems)} already completed problems in temp file. Resuming...")
+        except Exception as e:
+            print(f"Could not read existing temp CSV for resumption: {e}")
+
+    # 4. Processing loop
     for name in problem_names:
+        if name in completed_problems:
+            continue
+            
         if name in para_problem_names:
             index = para_problem_names.index(name)
             args = problem_argins[index] if index < len(problem_argins) else []
         else:
             args = None
+            
+        # Write current problem name before processing it to detect crashes
+        with open(current_prob_file, 'w') as f:
+            f.write(name)
+            
         info = get_problem_info(name, known_feasibility, args)
-        results.append(info)
+        
+        # Original logic to filter out 'unknown' values
+        def has_unknown_values(info_dict):
+            for value in info_dict.values():
+                if str(value).strip().lower() == 'unknown':
+                    return True
+            return False
+            
+        if not has_unknown_values(info):
+            df_single = pd.DataFrame([info])
+            if not os.path.exists(csv_file_temp):
+                df_single.to_csv(csv_file_temp, index=False, na_rep='nan')
+            else:
+                df_single.to_csv(csv_file_temp, mode='a', header=False, index=False, na_rep='nan')
+        else:
+            print(f"Filtered out problem {name} due to 'unknown' values.")
+            
+        # Clear crash detection file after successful processing
+        if os.path.exists(current_prob_file):
+            os.remove(current_prob_file)
+            
         sys.stdout.flush()
         sys.stderr.flush()
 
-    df = pd.DataFrame(results)
-
-    def has_unknown_values(row):
-        for value in row:
-            if str(value).strip().lower() == 'unknown':
-                return True
-        return False
-    unknown_mask = df.apply(has_unknown_values, axis=1)
-    if unknown_mask.any():
-        filtered_problems = df.loc[unknown_mask, 'problem_name'].tolist()
-        print(f"Filtered out {len(filtered_problems)} problems with 'unknown' values:")
-        for problem in filtered_problems:
-            print(f"  - {problem}")
-    df_clean = df[~unknown_mask]
-
-    df_clean.to_csv(os.path.join(saving_path, 'probinfo_python.csv'), index=False, na_rep='nan')
-
-    # Save 'feasibility' to txt file in the one line format with space separated values
-    feasibility_file = os.path.join(saving_path, 'feasibility_python.txt')
-    with open(feasibility_file, 'w') as f:
-        f.write(' '.join(feasibility))
-
-    # Save 'timeout_problems' to txt file in the one line format with space separated values
-    timeout_file = os.path.join(saving_path, 'timeout_problems_python.txt')
-    with open(timeout_file, 'w') as f:
-        f.write(' '.join(timeout_problems))
+    # 5. Finalize: If we reached here, all problems are processed successfully.
+    print("All problems processed. Finalizing output files...")
+    if os.path.exists(csv_file_temp):
+        shutil.move(csv_file_temp, csv_file)
+    
+    # Handle txt files renaming
+    for base_name in ['feasibility_python', 'timeout_problems_python', 'log_python']:
+        temp_path = os.path.join(saving_path, base_name + '_temp.txt')
+        final_path = os.path.join(saving_path, base_name + '.txt')
+        if os.path.exists(temp_path):
+            shutil.move(temp_path, final_path)
 
     print("Script completed successfully.")
 

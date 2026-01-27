@@ -92,18 +92,42 @@ jobs:
       - name: Run Python script
         if: matrix.language == 'python'
         run: |
-          python3 s_getInfo.py
+          MAX_RETRIES=50
+          COUNT=0
+          while [ $COUNT -lt $MAX_RETRIES ]; do
+            python3 s_getInfo.py
+            EXIT_CODE=$?
+            if [ $EXIT_CODE -eq 0 ]; then
+              echo "Script completed successfully."
+              break
+            fi
+            echo "Script crashed with exit code $EXIT_CODE. Restarting ($((COUNT+1))/$MAX_RETRIES)..."
+            COUNT=$((COUNT+1))
+            # Small sleep to avoid rapid fire restarts
+            sleep 2
+          done
+          if [ $COUNT -eq $MAX_RETRIES ]; then
+            echo "Reached maximum retry limit."
+            exit 1
+          fi
           
       - name: Upload Python artifacts
-        if: matrix.language == 'python'
+        if: always() && matrix.language == 'python'
         uses: actions/upload-artifact@v4
         with:
           name: probinfo-files-python
+          if-no-files-found: ignore
           path: |
             probinfo_python.csv
+            probinfo_python_temp.csv
             feasibility_python.txt
+            feasibility_python_temp.txt
             timeout_problems_python.txt
+            timeout_problems_python_temp.txt
             log_python.txt
+            log_python_temp.txt
+            exclude_python.txt
+            current_problem.txt
       
       - name: Upload MATLAB artifacts
         if: matrix.language == 'matlab'

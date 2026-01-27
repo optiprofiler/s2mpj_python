@@ -1,5 +1,11 @@
 name: Collect Info
 
+# Prevent new runs from canceling in-progress runs (e.g. workflow_run re-trigger).
+# When Sync completes again, we avoid "The operation was canceled" on the previous collect run.
+concurrency:
+  group: collect-info
+  cancel-in-progress: false
+
 # This workflow do the following:
 # 1. Checkout the repository
 # 2. Checkout the optiprofiler repository
@@ -89,6 +95,10 @@ jobs:
           pip install -e .
           cd ..
 
+      # Retry loop only handles Python script crashes (non-zero exit). It does NOT handle
+      # "The operation was canceled" — that is job-level cancellation (timeout/concurrency);
+      # the whole step is killed, so no retry runs. Use concurrency.cancel-in-progress: false
+      # to avoid new workflow runs canceling this one. Job timeout is 6h (timeout-minutes).
       - name: Run Python script
         if: matrix.language == 'python'
         run: |
@@ -103,7 +113,6 @@ jobs:
             fi
             echo "Script crashed with exit code $EXIT_CODE. Restarting ($((COUNT+1))/$MAX_RETRIES)..."
             COUNT=$((COUNT+1))
-            # Small sleep to avoid rapid fire restarts
             sleep 2
           done
           if [ $COUNT -eq $MAX_RETRIES ]; then

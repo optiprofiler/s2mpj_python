@@ -1,3 +1,5 @@
+import json
+import subprocess
 import numpy as np
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
@@ -56,6 +58,20 @@ def append_to_txt(file_path, value):
             f.write(value + '\n')
     except Exception as e:
         print(f"Error appending to {file_path}: {e}")
+
+
+def _to_json_serializable(obj):
+    """Convert numpy types in info_single to native Python for JSON."""
+    if isinstance(obj, dict):
+        return {k: _to_json_serializable(v) for k, v in obj.items()}
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        return float(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    return obj
+
 
 # Find problems that are parametric
 filename = os.path.join(cwd, 'list_of_parametric_problems_with_parameters_python.txt')
@@ -397,10 +413,26 @@ def get_problem_info(problem_name, known_feasibility, problem_argins=None):
     return info_single
 
 if __name__ == "__main__":
+    # --single mode: run one problem in subprocess isolation. Crashes (segfault/OOM) only kill
+    # the child; parent excludes the problem and continues. Output written to result_single.json.
+    if len(sys.argv) >= 2 and sys.argv[1] == "--single":
+        try:
+            name = sys.argv[2]
+            args = json.loads(sys.argv[3]) if len(sys.argv) > 3 else None
+            info = get_problem_info(name, known_feasibility, args)
+            out = os.path.join(saving_path, "result_single.json")
+            with open(out, "w") as f:
+                json.dump(_to_json_serializable(info), f, indent=None)
+            sys.exit(0)
+        except Exception as e:
+            print(f"[--single] Error processing {sys.argv[2] if len(sys.argv) > 2 else '?'}: {e}")
+            sys.exit(1)
+
     csv_file = os.path.join(saving_path, 'probinfo_python.csv')
     csv_file_temp = os.path.join(saving_path, 'probinfo_python_temp.csv')
     current_prob_file = os.path.join(saving_path, 'current_problem.txt')
     exclude_file = os.path.join(saving_path, 'exclude_python.txt')
+    result_single_path = os.path.join(saving_path, 'result_single.json')
 
     # 1. Crash Detection: If current_problem.txt exists, the previous run crashed on that problem.
     if os.path.exists(current_prob_file):
@@ -450,16 +482,45 @@ if __name__ == "__main__":
         # Write current problem name before processing it to detect crashes
         with open(current_prob_file, 'w') as f:
             f.write(name)
-            
-        info = get_problem_info(name, known_feasibility, args)
-        
-        # Original logic to filter out 'unknown' values
+
+        # Run each problem in a subprocess so that segfault/OOM during load only kills the
+        # child; we exclude the problem and continue. No need to restart the whole script.
+        args_json = json.dumps(args) if args is not None else "null"
+        cmd = [sys.executable, os.path.abspath(__file__), "--single", name, args_json]
+        try:
+            ret = subprocess.run(cmd, cwd=cwd, timeout=None)
+        except subprocess.TimeoutExpired:
+            ret = subprocess.CompletedProcess(cmd, returncode=-1)
+
+        if ret.returncode != 0:
+            print(f"Problem {name} crashed or failed (exit {ret.returncode}). Excluding and continuing.")
+            append_to_txt(exclude_file, name)
+            if name not in problem_exclude:
+                problem_exclude.append(name)
+            if os.path.exists(current_prob_file):
+                os.remove(current_prob_file)
+            if os.path.exists(result_single_path):
+                try:
+                    os.remove(result_single_path)
+                except Exception:
+                    pass
+            sys.stdout.flush()
+            sys.stderr.flush()
+            continue
+
+        with open(result_single_path, "r") as f:
+            info = json.load(f)
+        try:
+            os.remove(result_single_path)
+        except Exception:
+            pass
+
         def has_unknown_values(info_dict):
             for value in info_dict.values():
                 if str(value).strip().lower() == 'unknown':
                     return True
             return False
-            
+
         if not has_unknown_values(info):
             df_single = pd.DataFrame([info])
             if not os.path.exists(csv_file_temp):
@@ -468,11 +529,10 @@ if __name__ == "__main__":
                 df_single.to_csv(csv_file_temp, mode='a', header=False, index=False, na_rep='nan')
         else:
             print(f"Filtered out problem {name} due to 'unknown' values.")
-            
-        # Clear crash detection file after successful processing
+
         if os.path.exists(current_prob_file):
             os.remove(current_prob_file)
-            
+
         sys.stdout.flush()
         sys.stderr.flush()
 

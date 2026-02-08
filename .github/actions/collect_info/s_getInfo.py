@@ -31,7 +31,7 @@ file.close()
 # 'HS67', 'HS68', 'HS69', 'HS85', 'HS88', 'HS89', 'HS90', 'HS91', 'HS92' are under development and not ready for use
 # 'TWIRIBG1' will kill the process if run, so we exclude it
 problem_exclude = [
-    'SPARCO10LS', 'SPARCO10', 'SPARCO11LS', 'SPARCO11', 'SPARCO12LS', 'SPARCO12', 'SPARCO2LS', 'SPARCO2', 'SPARCO3LS', 'SPARCO3', 'SPARCO5LS', 'SPARCO5', 'SPARCO7LS', 'SPARCO7', 'SPARCO8LS', 'SPARCO8', 'SPARCO9LS', 'SPARCO9', 'ROSSIMP3_mp', 'HS67', 'HS68', 'HS69', 'HS85', 'HS88', 'HS89', 'HS90', 'HS91', 'HS92', 'TWIRIBG1'
+    'SPARCO10LS', 'SPARCO10', 'SPARCO11LS', 'SPARCO11', 'SPARCO12LS', 'SPARCO12', 'SPARCO2LS', 'SPARCO2', 'SPARCO3LS', 'SPARCO3', 'SPARCO5LS', 'SPARCO5', 'SPARCO7LS', 'SPARCO7', 'SPARCO8LS', 'SPARCO8', 'SPARCO9LS', 'SPARCO9', 'ROSSIMP3_mp'
 ]
 problem_names = [name for name in problem_names if name not in problem_exclude]
 
@@ -202,17 +202,17 @@ def get_problem_info(problem_name, known_feasibility, problem_argins=None):
 
     try:
         f = run_with_timeout(p.fun, (p.x0,), timeout)
-        if problem_name == 'LIN':
-            info_single['isfeasibility'] = 0
-        elif np.size(f) == 0 or np.isnan(f) or problem_name in known_feasibility:
+        # if problem_name == 'LIN':
+        #     info_single['isfeasibility'] = 0
+        if np.size(f) == 0 or np.isnan(f) or problem_name in known_feasibility:
             info_single['isfeasibility'] = 1
             feasibility.append(problem_name)
             append_to_txt(os.path.join(saving_path, 'feasibility_python_temp.txt'), problem_name)
         else:
             info_single['isfeasibility'] = 0
-        if problem_name == 'LIN':
-            info_single['f0'] = np.nan
-        elif np.size(f) == 0 or np.isnan(f) or (problem_name in known_feasibility and problem_name != 'HS8'):
+        # if problem_name == 'LIN':
+        #     info_single['f0'] = np.nan
+        if np.size(f) == 0 or np.isnan(f) or (problem_name in known_feasibility and problem_name != 'HS8'):
             info_single['f0'] = 0
         else:
             info_single['f0'] = f

@@ -43,8 +43,15 @@ jobs:
         with:
           repository: optiprofiler/optiprofiler
           path: optiprofiler
-          submodules: recursive 
-          ref: reorganize
+          ref: main
+
+      - name: Copy current repo to OptiProfiler problem_libs
+        run: |
+          # Ensure the target directory exists
+          mkdir -p optiprofiler/python/optiprofiler/problem_libs/s2mpj
+          # Copy all files except optiprofiler and .github directories
+          rsync -av --exclude='optiprofiler' --exclude='.github' --exclude='.git' . optiprofiler/python/optiprofiler/problem_libs/s2mpj/
+          echo "Copied current repo files to optiprofiler/python/optiprofiler/problem_libs/s2mpj"
 
       - name: Copy collect_info files to root directory
         run: |

@@ -8,19 +8,47 @@ from optiprofiler.opclasses import Problem
 
 def s2mpj_load(problem_name, *args):
     """
-    Load the S2MPJ problem.
+    Convert an S2MPJ problem name to a `Problem` instance.
 
     Parameters
     ----------
     problem_name : str
-        Name of the problem in S2MPJ.
-    *args : tuple
-        Additional arguments to pass to the problem class constructor
+        Name of the problem in the S2MPJ collection. More details about
+        S2MPJ can be found at
+        `the official repository <https://github.com/GrattonToint/S2MPJ>`_.
 
     Returns
     -------
-    `Problem`
-        An instance of the Problem class.
+    optiprofiler.Problem
+        A ``Problem`` instance corresponding to the named problem.
+
+    Notes
+    -----
+    There are two ways to obtain the ``problem_name`` you want:
+
+    1. Use `s2mpj_select` to get the problem names that satisfy your
+       criteria.
+    2. Look for the CSV file ``probinfo_python.csv`` in the same directory
+       as this module. It contains information about all problems in S2MPJ.
+
+    The problem name may appear in the form ``'PROBLEMNAME_n_m'`` where
+    ``n`` is the dimension and ``m`` is the number of linear and nonlinear
+    constraints. This happens when a problem accepts extra arguments to
+    change its dimension or number of constraints. This information is
+    stored in the ``probinfo_python.csv`` file.
+
+    See Also
+    --------
+    s2mpj_select : Select problems from S2MPJ by criteria.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        from optiprofiler.problem_libs.s2mpj import s2mpj_load
+
+        problem = s2mpj_load('ROSENBR')
+        print(problem.n)  # 2
     """
 
     # Add the path of the problem to the system path.
@@ -243,53 +271,103 @@ def s2mpj_load(problem_name, *args):
 
 def s2mpj_select(options):
     """
-    Select problems from the S2MPJ collection that satisfy given criteria.
-    
+    Select problems from S2MPJ that satisfy given criteria.
+
     Parameters
     ----------
     options : dict
-        A dictionary containing selection criteria:
-        - ptype: problem type, string containing any of 'u', 'b', 'l', 'n' 
-                 (default: 'ubln')
-        - mindim: minimum dimension (default: 1)
-        - maxdim: maximum dimension (default: inf)
-        - minb: minimum number of bound constraints (default: 0)
-        - maxb: maximum number of bound constraints (default: inf)
-        - minlcon: minimum number of linear constraints (default: 0)
-        - maxlcon: maximum number of linear constraints (default: inf)
-        - minnlcon: minimum number of nonlinear constraints (default: 0)
-        - maxnlcon: maximum number of nonlinear constraints (default: inf)
-        - mincon: minimum total number of constraints (default: 0)
-        - maxcon: maximum total number of constraints (default: inf)
-        - oracle: oracle level, 0=zeroth-order, 1=first-order, 2=second-order 
-                 (default: 0)
-        - excludelist: list of problems to exclude (default: [])
-    
+        A dictionary containing selection criteria. More details about
+        S2MPJ can be found at
+        `the official repository <https://github.com/GrattonToint/S2MPJ>`_.
+        Supported keys:
+
+        - **ptype** (*str*) -- Type of problems to select. A string
+          consisting of any combination of ``'u'`` (unconstrained),
+          ``'b'`` (bound constrained), ``'l'`` (linearly constrained),
+          and ``'n'`` (nonlinearly constrained), such as ``'b'``,
+          ``'ul'``, ``'ubn'``. Default is ``'ubln'``.
+        - **mindim** (*int*) -- Minimum dimension. Default is ``1``.
+        - **maxdim** (*int*) -- Maximum dimension. Default is ``inf``.
+        - **minb** (*int*) -- Minimum number of bound constraints.
+          Default is ``0``.
+        - **maxb** (*int*) -- Maximum number of bound constraints.
+          Default is ``inf``.
+        - **minlcon** (*int*) -- Minimum number of linear constraints.
+          Default is ``0``.
+        - **maxlcon** (*int*) -- Maximum number of linear constraints.
+          Default is ``inf``.
+        - **minnlcon** (*int*) -- Minimum number of nonlinear constraints.
+          Default is ``0``.
+        - **maxnlcon** (*int*) -- Maximum number of nonlinear constraints.
+          Default is ``inf``.
+        - **mincon** (*int*) -- Minimum total number of linear and
+          nonlinear constraints. Default is ``0``.
+        - **maxcon** (*int*) -- Maximum total number of linear and
+          nonlinear constraints. Default is ``inf``.
+        - **oracle** (*int*) -- Oracle provided by the problem. ``0``
+          means zeroth-order, ``1`` means first-order, ``2`` means
+          second-order. Default is ``0``.
+        - **excludelist** (*list of str*) -- List of problem names to
+          exclude. Default is ``[]``.
+
     Returns
     -------
-    list
-        A list of problem names that satisfy the criteria.
+    list of str
+        Problem names that satisfy the given criteria.
+
+    Notes
+    -----
+    1. All information about the problems can be found in the CSV file
+       ``probinfo_python.csv`` in the same directory as this module.
+
+    2. The problem name may appear in the form ``'PROBLEMNAME_n_m'``
+       where ``n`` is the dimension and ``m`` is the number of
+       constraints. This happens when a problem accepts extra arguments
+       to change its dimension or number of constraints.
+
+    3. There is a file ``config.txt`` in the same directory as this
+       module. It can be used to set the options ``variable_size`` and
+       ``test_feasibility_problems``. See the comments in ``config.txt``
+       for details. You can also override these options at runtime using
+       `set_plib_config` or by setting environment variables
+       ``S2MPJ_VARIABLE_SIZE`` and ``S2MPJ_TEST_FEASIBILITY_PROBLEMS``.
+       Environment variables take precedence over ``config.txt``.
+
+    See Also
+    --------
+    s2mpj_load : Load a problem from S2MPJ.
+    optiprofiler.get_plib_config : Read the current configuration.
+    optiprofiler.set_plib_config : Override configuration at runtime.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        from optiprofiler.problem_libs.s2mpj import s2mpj_select
+
+        names = s2mpj_select({'ptype': 'u', 'maxdim': 2})
     """
-    # Set default options in the config file if not provided.
+    # Read config: environment variables (set via set_plib_config) take
+    # precedence over the values in config.txt.
     variable_size = 'default'
     test_feasibility_problems = 0
-    # Check if 'config.txt' exists under the same directory as this script
     current_dir = os.path.dirname(os.path.abspath(__file__))
     config_path = os.path.join(current_dir, 'config.txt')
     if os.path.exists(config_path):
         try:
             with open(config_path, 'r') as f:
-                # Find the line starting with 'variable_size=' and 'test_feasibility_problems='
-                lines = f.readlines()
-                for line in lines:
-                    if line.strip().startswith('variable_size='):
-                        variable_size = line.strip().split('=')[1].strip()
-                        variable_size = variable_size.split('#')[0].split('%')[0].strip()
-                    elif line.strip().startswith('test_feasibility_problems='):
-                        test_feasibility_problems = line.strip().split('=')[1].strip()
-                        test_feasibility_problems = int(test_feasibility_problems.split('#')[0].split('%')[0].strip())
-        except:
+                for line in f:
+                    stripped = line.strip()
+                    if stripped.startswith('variable_size='):
+                        variable_size = stripped.split('=')[1].split('#')[0].split('%')[0].strip()
+                    elif stripped.startswith('test_feasibility_problems='):
+                        test_feasibility_problems = int(stripped.split('=')[1].split('#')[0].split('%')[0].strip())
+        except Exception:
             pass
+    if 'S2MPJ_VARIABLE_SIZE' in os.environ:
+        variable_size = os.environ['S2MPJ_VARIABLE_SIZE']
+    if 'S2MPJ_TEST_FEASIBILITY_PROBLEMS' in os.environ:
+        test_feasibility_problems = int(os.environ['S2MPJ_TEST_FEASIBILITY_PROBLEMS'])
     
     if variable_size not in ['default', 'min', 'max', 'all']:
         raise ValueError("Invalid `variable_size` in the file `config.txt`. Please set it to 'default', 'min', 'max', or 'all'.")

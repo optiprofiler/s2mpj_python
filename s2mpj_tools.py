@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 from optiprofiler.opclasses import Problem
-from optiprofiler.utils import get_logger
+from optiprofiler.utils import get_logger, shorten_log_message
 
 
 def s2mpj_load(problem_name, *args):
@@ -64,7 +64,9 @@ def s2mpj_load(problem_name, *args):
             # Add the subfolder 'python_problems' under the 'src' directory to the system path.
             sys.path.insert(0, python_problems_dir)
     except Exception as err:
-        get_logger(__name__).warning(f'Failed to add the path of Python problems of S2MPJ to the system path: {err}')
+        get_logger(__name__).warning(
+            f'Failed to add the path of Python problems of S2MPJ to the system path: {shorten_log_message(err)}'
+        )
         raise
 
     # Check if 'problem_name' has the pattern '_n_m' or '_n'. If it has, find the position of the pattern and return the dimension 'n' and the number of constraints 'm'.
@@ -186,8 +188,8 @@ def s2mpj_load(problem_name, *args):
             bx = jx @ x0 - cx
         except Exception as err:
             _warn_s2mpj_evaluation_failure(name, 'the linear constraint Jacobian', err)
-            jx = None
-            bx = None
+            jx = np.full((getattr(p, 'm', 0), getattr(p, 'n', x0.size)), np.nan)
+            bx = np.full(getattr(p, 'm', 0), np.nan)
 
     nonlincons = np.setdiff1d(np.arange(p.m), p.lincons)
     idx_eq = np.intersect1d(np.arange(p.nle, p.nle + p.neq), idx_cl_finite)
@@ -641,10 +643,7 @@ def _getHx(p, problem_name, x):
         return h
 
 
-def _warn_s2mpj_evaluation_failure(problem_name, what, err, max_len=180):
+def _warn_s2mpj_evaluation_failure(problem_name, what, err):
     logger = get_logger(__name__)
-    msg = f'{type(err).__name__}: {err}'
-    msg = re.sub(r'\s+', ' ', msg).strip()
-    if len(msg) > max_len:
-        msg = msg[:max_len - 3] + '...'
+    msg = shorten_log_message(f'{type(err).__name__}: {err}')
     logger.warning(f'Failed to evaluate {what} of S2MPJ problem {problem_name}: {msg}')

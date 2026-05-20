@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 
 from optiprofiler.opclasses import Problem
+from optiprofiler.utils import get_logger
 
 
 def s2mpj_load(problem_name, *args):
@@ -63,7 +64,7 @@ def s2mpj_load(problem_name, *args):
             # Add the subfolder 'python_problems' under the 'src' directory to the system path.
             sys.path.insert(0, python_problems_dir)
     except Exception as err:
-        print(f"Failed to add the path of Python problems of S2MPJ to the system path: {err}")
+        get_logger(__name__).warning(f'Failed to add the path of Python problems of S2MPJ to the system path: {err}')
         raise
 
     # Check if 'problem_name' has the pattern '_n_m' or '_n'. If it has, find the position of the pattern and return the dimension 'n' and the number of constraints 'm'.
@@ -143,8 +144,8 @@ def s2mpj_load(problem_name, *args):
     name = problem_name
 
     fun = lambda x: _getfun(p, is_feasibility, name, x)
-    grad = lambda x: _getgrad(p, is_feasibility, x)
-    hess = lambda x: _gethess(p, is_feasibility, x)
+    grad = lambda x: _getgrad(p, is_feasibility, name, x)
+    hess = lambda x: _gethess(p, is_feasibility, name, x)
 
     x0 = p.x0.flatten()
     xl = p.xlower.flatten()
@@ -183,7 +184,8 @@ def s2mpj_load(problem_name, *args):
                 jx = jx.toarray()
             cx = cx.flatten()
             bx = jx @ x0 - cx
-        except Exception:
+        except Exception as err:
+            _warn_s2mpj_evaluation_failure(name, 'the linear constraint Jacobian', err)
             jx = None
             bx = None
 
@@ -221,13 +223,13 @@ def s2mpj_load(problem_name, *args):
     #           -c(x)[idx_cge] + cl[idx_cge]] <= 0
     def ceq(x):
         if idx_ceq.size == 0: return None
-        y = _getcx(p, x)
+        y = _getcx(p, name, x)
         if y is None: return np.full(idx_ceq.size, np.nan)
         z = y[idx_ceq] - cu[idx_ceq]
         return np.full(idx_ceq.size, np.nan) if (hasattr(z, "size") and z.size == 0) else z
     def cub(x):
         if idx_cle.size == 0 and idx_cge.size == 0: return None
-        y = _getcx(p, x)
+        y = _getcx(p, name, x)
         if y is None: return np.full(idx_cle.size + idx_cge.size, np.nan)
         le = y[idx_cle] - cu[idx_cle] if idx_cle.size > 0 else None
         ge = y[idx_cge] - cl[idx_cge] if idx_cge.size > 0 else None
@@ -237,12 +239,12 @@ def s2mpj_load(problem_name, *args):
         return np.concatenate([le, -ge])
     def hceq(x):
         if idx_ceq.size == 0: return []
-        Hx = _getHx(p, x)
+        Hx = _getHx(p, name, x)
         if Hx is None: return [np.full((x.size, x.size), np.nan)] * idx_ceq.size
         return [Hx[i] for i in idx_ceq]
     def hcub(x):
         if idx_cle.size == 0 and idx_cge.size == 0: return []
-        Hx = _getHx(p, x)
+        Hx = _getHx(p, name, x)
         if Hx is None: return [np.full((x.size, x.size), np.nan)] * (idx_cle.size + idx_cge.size)
         le = [Hx[i] for i in idx_cle] if idx_cle.size > 0 else []
         ge = [Hx[i] for i in idx_cge] if idx_cge.size > 0 else []
@@ -250,12 +252,12 @@ def s2mpj_load(problem_name, *args):
 
     def jceq(x):
         if idx_ceq.size == 0: return np.empty((0, p.n))
-        Jx = _getJx(p, x)
+        Jx = _getJx(p, name, x)
         if Jx is None: return np.full((idx_ceq.size, x.size), np.nan)
         return Jx[idx_ceq, :]
     def jcub(x):
         if idx_cle.size == 0 and idx_cge.size == 0: return np.empty((0, p.n))
-        Jx = _getJx(p, x)
+        Jx = _getJx(p, name, x)
         if Jx is None: return np.full((idx_cle.size + idx_cge.size, x.size), np.nan)
         le = Jx[idx_cle, :] if idx_cle.size > 0 else None
         ge = Jx[idx_cge, :] if idx_cge.size > 0 else None
@@ -568,11 +570,12 @@ def _getfun(p, is_feasibility, problem_name, x):
                 f = p.fx(x)
                 if hasattr(f, 'item'):
                     f = f.item()
-            except Exception:
+            except Exception as err:
+                _warn_s2mpj_evaluation_failure(problem_name, 'the objective function', err)
                 f = np.nan
     return f
 
-def _getgrad(p, is_feasibility, x):
+def _getgrad(p, is_feasibility, problem_name, x):
     if is_feasibility:
         g = np.zeros_like(x)
     else:
@@ -582,11 +585,12 @@ def _getgrad(p, is_feasibility, x):
                 _, g = p.fgx(x)
                 g = g.toarray() if hasattr(g, 'toarray') else g
                 g = g.flatten()
-            except Exception:
+            except Exception as err:
+                _warn_s2mpj_evaluation_failure(problem_name, 'the gradient of the objective function', err)
                 g = np.full(x.size, np.nan)
     return g
 
-def _gethess(p, is_feasibility, x):
+def _gethess(p, is_feasibility, problem_name, x):
     if is_feasibility:
         h = np.zeros((len(x), len(x)))
     else:
@@ -595,32 +599,35 @@ def _gethess(p, is_feasibility, x):
             try:
                 _, _, h = p.fgHx(x)
                 h = h.toarray() if hasattr(h, 'toarray') else h
-            except Exception:
+            except Exception as err:
+                _warn_s2mpj_evaluation_failure(problem_name, 'the Hessian of the objective function', err)
                 h = np.full((x.size, x.size), np.nan)
     return h
 
-def _getcx(p, x):
+def _getcx(p, problem_name, x):
     buf = io.StringIO()
     with redirect_stdout(buf):
         try:
             c = p.cx(x)
             c = c.toarray() if hasattr(c, 'toarray') else c
             c = c.flatten()
-        except Exception:
-            c = None
+        except Exception as err:
+            _warn_s2mpj_evaluation_failure(problem_name, 'the nonlinear constraint function', err)
+            c = np.full(getattr(p, 'm', 0), np.nan)
     return c
 
-def _getJx(p, x):
+def _getJx(p, problem_name, x):
     buf = io.StringIO()
     with redirect_stdout(buf):
         try:
             _, j = p.cJx(x)[:2]
             j = j.toarray() if hasattr(j, 'toarray') else j
-        except Exception:
-            j = None
+        except Exception as err:
+            _warn_s2mpj_evaluation_failure(problem_name, 'the Jacobian of the nonlinear constraint function', err)
+            j = np.full((getattr(p, 'm', 0), getattr(p, 'n', x.size)), np.nan)
     return j
 
-def _getHx(p, x):
+def _getHx(p, problem_name, x):
     buf = io.StringIO()
     with redirect_stdout(buf):
         try:
@@ -628,6 +635,16 @@ def _getHx(p, x):
             for i in range(len(h)):
                 if hasattr(h[i], 'toarray'):
                     h[i] = h[i].toarray()
-        except Exception:
-            h = None
+        except Exception as err:
+            _warn_s2mpj_evaluation_failure(problem_name, 'the Hessian of the nonlinear constraint function', err)
+            h = [np.full((getattr(p, 'n', x.size), getattr(p, 'n', x.size)), np.nan) for _ in range(getattr(p, 'm', 0))]
         return h
+
+
+def _warn_s2mpj_evaluation_failure(problem_name, what, err, max_len=180):
+    logger = get_logger(__name__)
+    msg = f'{type(err).__name__}: {err}'
+    msg = re.sub(r'\s+', ' ', msg).strip()
+    if len(msg) > max_len:
+        msg = msg[:max_len - 3] + '...'
+    logger.warning(f'Failed to evaluate {what} of S2MPJ problem {problem_name}: {msg}')

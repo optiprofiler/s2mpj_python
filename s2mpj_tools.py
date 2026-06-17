@@ -176,20 +176,24 @@ def s2mpj_load(problem_name, *args):
 
     # The linear constraints are hidden in the cJx method output.
     # cx = jx @ x0 - bx
-    buf = io.StringIO()
-    with redirect_stdout(buf):
-        try:
-            cx, jx = p.cJx(p.x0)[:2]
-            if hasattr(cx, 'toarray'):
-                cx = cx.toarray()
-            if hasattr(jx, 'toarray'):
-                jx = jx.toarray()
-            cx = cx.flatten()
-            bx = jx @ x0 - cx
-        except Exception as err:
-            _warn_s2mpj_evaluation_failure(name, 'the linear constraint Jacobian', err)
-            jx = np.full((getattr(p, 'm', 0), getattr(p, 'n', x0.size)), np.nan)
-            bx = np.full(getattr(p, 'm', 0), np.nan)
+    if getattr(p, 'm', 0) == 0:
+        jx = np.empty((0, getattr(p, 'n', x0.size)))
+        bx = np.empty(0)
+    else:
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            try:
+                cx, jx = p.cJx(p.x0)[:2]
+                if hasattr(cx, 'toarray'):
+                    cx = cx.toarray()
+                if hasattr(jx, 'toarray'):
+                    jx = jx.toarray()
+                cx = cx.flatten()
+                bx = jx @ x0 - cx
+            except Exception as err:
+                _warn_s2mpj_evaluation_failure(name, 'the linear constraint Jacobian', err)
+                jx = np.full((getattr(p, 'm', 0), getattr(p, 'n', x0.size)), np.nan)
+                bx = np.full(getattr(p, 'm', 0), np.nan)
 
     nonlincons = np.setdiff1d(np.arange(p.m), p.lincons)
     idx_eq = np.intersect1d(np.arange(p.nle, p.nle + p.neq), idx_cl_finite)
@@ -607,6 +611,8 @@ def _gethess(p, is_feasibility, problem_name, x):
     return h
 
 def _getcx(p, problem_name, x):
+    if getattr(p, 'm', 0) == 0:
+        return np.empty(0)
     buf = io.StringIO()
     with redirect_stdout(buf):
         try:
@@ -619,6 +625,8 @@ def _getcx(p, problem_name, x):
     return c
 
 def _getJx(p, problem_name, x):
+    if getattr(p, 'm', 0) == 0:
+        return np.empty((0, getattr(p, 'n', x.size)))
     buf = io.StringIO()
     with redirect_stdout(buf):
         try:
@@ -630,6 +638,8 @@ def _getJx(p, problem_name, x):
     return j
 
 def _getHx(p, problem_name, x):
+    if getattr(p, 'm', 0) == 0:
+        return []
     buf = io.StringIO()
     with redirect_stdout(buf):
         try:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
+from contextlib import contextmanager
 import math
 import os
 import random
@@ -28,6 +29,24 @@ from s2mpj_tools import s2mpj_load, s2mpj_select
 
 
 REPRESENTATIVE_PROBLEMS = ["ALLINITU", "ALLINIT", "ALSOTAME", "ALLINITA"]
+
+
+@contextmanager
+def _temporary_env(**updates):
+    previous = {key: os.environ.get(key) for key in updates}
+    try:
+        for key, value in updates.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = str(value)
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 def _as_array(value):
@@ -95,6 +114,64 @@ class S2MPJPythonAdapterTests(unittest.TestCase):
         for problem_name in sample:
             with self.subTest(problem=problem_name):
                 _assert_problem_contract(self, problem_name)
+
+    def test_config_environment_overrides_variable_size(self):
+        options = {
+            "ptype": "ubln",
+            "maxdim": 5,
+            "maxb": 20,
+            "maxlcon": 20,
+            "maxnlcon": 20,
+            "maxcon": 20,
+        }
+        with _temporary_env(
+            S2MPJ_VARIABLE_SIZE=None,
+            S2MPJ_TEST_FEASIBILITY_PROBLEMS=None,
+        ):
+            default_names = s2mpj_select(dict(options))
+        with _temporary_env(
+            S2MPJ_VARIABLE_SIZE="all",
+            S2MPJ_TEST_FEASIBILITY_PROBLEMS="0",
+        ):
+            all_names = s2mpj_select(dict(options))
+
+        self.assertGreater(len(all_names), len(default_names))
+        self.assertIn("CHEBYQAD_2", all_names)
+        self.assertNotIn("CHEBYQAD_2", default_names)
+
+    def test_config_environment_overrides_feasibility_selection(self):
+        options = {
+            "ptype": "ubln",
+            "maxdim": 5,
+            "maxb": 20,
+            "maxlcon": 20,
+            "maxnlcon": 20,
+            "maxcon": 20,
+        }
+        with _temporary_env(
+            S2MPJ_VARIABLE_SIZE="default",
+            S2MPJ_TEST_FEASIBILITY_PROBLEMS="1",
+        ):
+            feasibility_names = s2mpj_select(dict(options))
+        with _temporary_env(
+            S2MPJ_VARIABLE_SIZE="default",
+            S2MPJ_TEST_FEASIBILITY_PROBLEMS="2",
+        ):
+            all_names = s2mpj_select(dict(options))
+
+        self.assertIn("ARGAUSS", feasibility_names)
+        self.assertNotIn("ALLINITU", feasibility_names)
+        self.assertIn("ARGAUSS", all_names)
+        self.assertIn("ALLINITU", all_names)
+
+    def test_config_environment_rejects_invalid_values(self):
+        options = {"ptype": "u", "maxdim": 5}
+        with _temporary_env(S2MPJ_VARIABLE_SIZE="not-a-mode"):
+            with self.assertRaises(ValueError):
+                s2mpj_select(dict(options))
+        with _temporary_env(S2MPJ_TEST_FEASIBILITY_PROBLEMS="3"):
+            with self.assertRaises(ValueError):
+                s2mpj_select(dict(options))
 
 
 if __name__ == "__main__":

@@ -35,6 +35,7 @@ The `CI` workflow runs daily and on pushes. It checks the OptiProfiler adapter l
 - selecting a small set of representative `u`, `b`, `l`, and `n` problems;
 - loading each selected problem through `s2mpj_load`;
 - evaluating `fun`, `cub`, and `ceq` at the initial point;
+- checking `variable_size` and `test_feasibility_problems` environment overrides;
 - sampling a few additional small problems each day with at most two numerical-library threads.
 
 Locally, from this repository:

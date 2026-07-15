@@ -32,6 +32,16 @@ jobs:
           path: optiprofiler
           ref: main
 
+      - name: Bootstrap the API-v1 protocol under development
+        shell: bash
+        run: |
+          protocol_file="optiprofiler/python/optiprofiler/problem_libraries.py"
+          if ! test -f "$protocol_file" || ! grep -q "class ProblemLibraryPlugin" "$protocol_file"; then
+            git -C optiprofiler fetch --depth=1 origin python
+            git -C optiprofiler checkout --detach FETCH_HEAD
+          fi
+          grep -q "PROBLEM_LIBRARY_API_VERSION = 1" "$protocol_file"
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:

@@ -14,7 +14,32 @@ This repository preserves only the files relevant to Python users from the origi
 
 The file `config.txt` in this directory controls how `s2mpj_select` filters problems (e.g., `variable_size` and `test_feasibility_problems`). See the comments in `config.txt` for a full description of each option.
 
-When used through **OptiProfiler**, you can override these options at runtime without editing `config.txt`:
+S2MPJ is still the default bundled Python problem library in OptiProfiler. This
+repository therefore keeps the legacy `s2mpj_load` / `s2mpj_select` interface
+while also exposing the same API-v1 adapter callbacks used by separately
+installed problem-library plugins.
+
+For a reproducible OptiProfiler experiment, pass the options explicitly for
+this run:
+
+```python
+from optiprofiler import benchmark
+
+benchmark(
+    solvers,
+    plibs=['s2mpj'],
+    plib_options={
+        's2mpj': {
+            'variable_size': 'all',
+            'test_feasibility_problems': 2,
+        },
+    },
+)
+```
+
+OptiProfiler stores the validated effective mapping with the experiment. For a
+process-level default shared by subsequent calls, the compatibility API remains
+available:
 
 ```python
 from optiprofiler import set_plib_config, get_plib_config
@@ -22,11 +47,15 @@ from optiprofiler import set_plib_config, get_plib_config
 # View the current effective configuration
 print(get_plib_config('s2mpj'))
 
-# Override at runtime (persists for the current Python process)
+# Override subsequent calls in the current Python process
 set_plib_config('s2mpj', variable_size='all', test_feasibility_problems=2)
 ```
 
-You can also set the environment variables `S2MPJ_VARIABLE_SIZE` and `S2MPJ_TEST_FEASIBILITY_PROBLEMS` directly. Environment variables take precedence over `config.txt`.
+The precedence is per-run `plib_options`, process-level `set_plib_config`,
+environment variables, `config.txt`, then built-in defaults. You can also set
+`S2MPJ_VARIABLE_SIZE` and `S2MPJ_TEST_FEASIBILITY_PROBLEMS` directly. The
+adapter merges these layers first and validates the final mapping once, so an
+explicit valid per-run value can replace an invalid lower-priority value.
 
 ## Testing
 
@@ -36,6 +65,7 @@ The `CI` workflow runs daily and on pushes. It checks the OptiProfiler adapter l
 - loading each selected problem through `s2mpj_load`;
 - evaluating `fun`, `cub`, and `ceq` at the initial point;
 - checking `variable_size` and `test_feasibility_problems` environment overrides;
+- checking the OptiProfiler API-v1 adapter callbacks used by the core loader;
 - sampling a few additional small problems each day with at most two numerical-library threads.
 
 Locally, from this repository:

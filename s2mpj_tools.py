@@ -1,4 +1,5 @@
 import sys, os, io, re, importlib
+from collections.abc import Mapping
 from contextlib import redirect_stdout
 import numpy as np
 import pandas as pd
@@ -7,7 +8,7 @@ from optiprofiler.opclasses import Problem
 from optiprofiler.utils import get_logger, shorten_log_message
 
 
-def s2mpj_load(problem_name, *args):
+def s2mpj_load(problem_name, *args, library_options=None):
     """
     Convert an S2MPJ problem name to a `Problem` instance.
 
@@ -17,6 +18,10 @@ def s2mpj_load(problem_name, *args):
         Name of the problem in the S2MPJ collection. More details about
         S2MPJ can be found at
         `the official repository <https://github.com/GrattonToint/S2MPJ>`_.
+    library_options : dict, optional
+        Validated S2MPJ options supplied by OptiProfiler. They currently affect
+        problem selection rather than loading, but accepting the same mapping
+        keeps selector and worker behavior explicit.
 
     Returns
     -------
@@ -51,6 +56,9 @@ def s2mpj_load(problem_name, *args):
         problem = s2mpj_load('ROSENBR')
         print(problem.n)  # 2
     """
+
+    if library_options is not None:
+        s2mpj_validate_options(library_options)
 
     # Add the path of the problem to the system path.
     try:
@@ -277,7 +285,117 @@ def s2mpj_load(problem_name, *args):
 
     return problem
 
-def s2mpj_select(options):
+
+def s2mpj_collect_info():
+    """Return the committed S2MPJ Python problem information table."""
+    probinfo_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        'probinfo_python.csv',
+    )
+    try:
+        return pd.read_csv(probinfo_path).to_dict(orient='records')
+    except Exception as exc:
+        raise FileNotFoundError(
+            f'Could not find or load problem info file at {probinfo_path}'
+        ) from exc
+
+
+def s2mpj_get_default_options():
+    """Return raw package and environment-level option defaults.
+
+    Validation is deliberately deferred until higher-priority process and
+    per-run overrides have been merged by OptiProfiler.
+    """
+    config = {
+        'variable_size': 'default',
+        'test_feasibility_problems': 0,
+    }
+    config_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        'config.txt',
+    )
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, 'r') as f:
+                for line in f:
+                    stripped = line.strip()
+                    if stripped.startswith('variable_size='):
+                        config['variable_size'] = (
+                            stripped.split('=', 1)[1]
+                            .split('#', 1)[0]
+                            .split('%', 1)[0]
+                            .strip()
+                        )
+                    elif stripped.startswith('test_feasibility_problems='):
+                        value = (
+                            stripped.split('=', 1)[1]
+                            .split('#', 1)[0]
+                            .split('%', 1)[0]
+                            .strip()
+                        )
+                        try:
+                            value = int(value)
+                        except ValueError:
+                            pass
+                        config['test_feasibility_problems'] = value
+        except Exception:
+            pass
+    if 'S2MPJ_VARIABLE_SIZE' in os.environ:
+        config['variable_size'] = os.environ['S2MPJ_VARIABLE_SIZE']
+    if 'S2MPJ_TEST_FEASIBILITY_PROBLEMS' in os.environ:
+        value = os.environ['S2MPJ_TEST_FEASIBILITY_PROBLEMS']
+        try:
+            value = int(value)
+        except ValueError:
+            pass
+        config['test_feasibility_problems'] = value
+    return config
+
+
+def s2mpj_validate_options(options):
+    """Validate and normalize S2MPJ-specific benchmark options."""
+    if not isinstance(options, Mapping):
+        raise TypeError('S2MPJ library options must be a mapping.')
+    known = {'variable_size', 'test_feasibility_problems'}
+    unknown = sorted(set(options) - known)
+    if unknown:
+        raise ValueError(
+            f'Unknown S2MPJ library options: {unknown}. '
+            f'Available options: {sorted(known)}.'
+        )
+    normalized = {
+        'variable_size': options.get('variable_size', 'default'),
+        'test_feasibility_problems': options.get(
+            'test_feasibility_problems',
+            0,
+        ),
+    }
+    variable_size = normalized['variable_size']
+    if not isinstance(variable_size, str) or variable_size not in {
+        'default',
+        'min',
+        'max',
+        'all',
+    }:
+        raise ValueError(
+            "S2MPJ option `variable_size` must be 'default', 'min', 'max', or 'all'."
+        )
+    feasibility = normalized['test_feasibility_problems']
+    if isinstance(feasibility, np.integer):
+        feasibility = int(feasibility)
+    if (
+        isinstance(feasibility, bool)
+        or not isinstance(feasibility, int)
+        or feasibility not in {0, 1, 2}
+    ):
+        raise ValueError(
+            'S2MPJ option `test_feasibility_problems` must be 0, 1, or 2.'
+        )
+    normalized['test_feasibility_problems'] = feasibility
+    return normalized
+
+
+def s2mpj_select(options, library_options=None):
     """
     Select problems from S2MPJ that satisfy given criteria.
 
@@ -317,6 +435,10 @@ def s2mpj_select(options):
           second-order. Default is ``0``.
         - **excludelist** (*list of str*) -- List of problem names to
           exclude. Default is ``[]``.
+    library_options : dict, optional
+        S2MPJ-specific options. Supported keys are ``variable_size`` and
+        ``test_feasibility_problems``. If omitted, package configuration and
+        environment-level defaults are used.
 
     Returns
     -------
@@ -339,7 +461,9 @@ def s2mpj_select(options):
        for details. You can also override these options at runtime using
        `set_plib_config` or by setting environment variables
        ``S2MPJ_VARIABLE_SIZE`` and ``S2MPJ_TEST_FEASIBILITY_PROBLEMS``.
-       Environment variables take precedence over ``config.txt``.
+       Environment variables take precedence over ``config.txt``. An explicit
+       ``library_options`` mapping takes precedence over both and is used by
+       ``benchmark(..., plib_options=...)``.
 
     See Also
     --------
@@ -355,32 +479,11 @@ def s2mpj_select(options):
 
         names = s2mpj_select({'ptype': 'u', 'maxdim': 2})
     """
-    # Read config: environment variables (set via set_plib_config) take
-    # precedence over the values in config.txt.
-    variable_size = 'default'
-    test_feasibility_problems = 0
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    config_path = os.path.join(current_dir, 'config.txt')
-    if os.path.exists(config_path):
-        try:
-            with open(config_path, 'r') as f:
-                for line in f:
-                    stripped = line.strip()
-                    if stripped.startswith('variable_size='):
-                        variable_size = stripped.split('=')[1].split('#')[0].split('%')[0].strip()
-                    elif stripped.startswith('test_feasibility_problems='):
-                        test_feasibility_problems = int(stripped.split('=')[1].split('#')[0].split('%')[0].strip())
-        except Exception:
-            pass
-    if 'S2MPJ_VARIABLE_SIZE' in os.environ:
-        variable_size = os.environ['S2MPJ_VARIABLE_SIZE']
-    if 'S2MPJ_TEST_FEASIBILITY_PROBLEMS' in os.environ:
-        test_feasibility_problems = int(os.environ['S2MPJ_TEST_FEASIBILITY_PROBLEMS'])
-    
-    if variable_size not in ['default', 'min', 'max', 'all']:
-        raise ValueError("Invalid `variable_size` in the file `config.txt`. Please set it to 'default', 'min', 'max', or 'all'.")
-    if test_feasibility_problems not in [0, 1, 2]:
-        raise ValueError("Invalid `test_feasibility_problems` in the file `config.txt`. Please set it to 0, 1, or 2.")
+    if library_options is None:
+        library_options = s2mpj_get_default_options()
+    library_options = s2mpj_validate_options(dict(library_options))
+    variable_size = library_options['variable_size']
+    test_feasibility_problems = library_options['test_feasibility_problems']
     
     # Initialize result lists
     problem_names = []

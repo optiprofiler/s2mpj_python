@@ -4,9 +4,11 @@ from datetime import date
 from pathlib import Path
 from contextlib import contextmanager
 import math
+import multiprocessing
 import os
 import random
 import sys
+import tempfile
 import unittest
 
 import numpy as np
@@ -24,11 +26,29 @@ for op_path in op_candidates:
         break
 
 sys.path.insert(0, str(REPO_DIR))
+sys.path.insert(0, str(REPO_DIR.parent))
 
-from s2mpj_tools import s2mpj_load, s2mpj_select
+from s2mpj_tools import (
+    s2mpj_collect_info,
+    s2mpj_get_default_options,
+    s2mpj_load,
+    s2mpj_select,
+    s2mpj_validate_options,
+)
+from optiprofiler.problem_libraries import (
+    _resolve_problem_library_options,
+    load_problem_library,
+    resolve_problem_library,
+)
 
 
 REPRESENTATIVE_PROBLEMS = ["ALLINITU", "ALLINIT", "ALSOTAME", "ALLINITA"]
+
+
+def _spawn_select_s2mpj(problem_options, library_options):
+    from s2mpj_python import get_problem_library
+
+    return get_problem_library().select(problem_options, library_options)
 
 
 @contextmanager
@@ -172,6 +192,80 @@ class S2MPJPythonAdapterTests(unittest.TestCase):
         with _temporary_env(S2MPJ_TEST_FEASIBILITY_PROBLEMS="3"):
             with self.assertRaises(ValueError):
                 s2mpj_select(dict(options))
+
+    def test_explicit_options_override_environment_and_reach_load(self):
+        library_options = {
+            "variable_size": "default",
+            "test_feasibility_problems": 0,
+        }
+        with _temporary_env(S2MPJ_VARIABLE_SIZE="not-a-mode"):
+            selected = s2mpj_select(
+                {"ptype": "u", "mindim": 2, "maxdim": 2},
+                library_options,
+            )
+        self.assertIn("ROSENBR", selected)
+        problem = s2mpj_load("ROSENBR", library_options=library_options)
+        self.assertEqual(problem.n, 2)
+
+    def test_library_option_callbacks_are_strict(self):
+        self.assertEqual(
+            set(s2mpj_get_default_options()),
+            {"variable_size", "test_feasibility_problems"},
+        )
+        with self.assertRaises(ValueError):
+            s2mpj_validate_options({"variable_size": "all", "unknown": 1})
+        with self.assertRaises(ValueError):
+            s2mpj_validate_options({
+                "variable_size": [],
+                "test_feasibility_problems": 0,
+            })
+
+    def test_legacy_plugin_protocol_callbacks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            custom_parent = Path(tmp)
+            (custom_parent / "s2mpj").symlink_to(REPO_DIR, target_is_directory=True)
+            reference = resolve_problem_library("s2mpj", custom_parent)
+            plugin = load_problem_library(reference)
+            self.assertEqual(plugin.name, "s2mpj")
+            self.assertIsNotNone(plugin.collect_info)
+            effective = _resolve_problem_library_options(
+                plugin,
+                {"variable_size": "default", "test_feasibility_problems": 0},
+            )
+            selected = plugin.select(
+                {"ptype": "u", "mindim": 2, "maxdim": 2},
+                effective,
+            )
+            self.assertIn("ROSENBR", selected)
+            problem = plugin.load("ROSENBR", effective)
+            self.assertEqual(problem.n, 2)
+
+    def test_api_v1_factory(self):
+        from s2mpj_python import get_problem_library
+
+        plugin = get_problem_library()
+        self.assertEqual(plugin.name, "s2mpj")
+        self.assertEqual(plugin.api_version, 1)
+        self.assertIsNotNone(plugin.get_default_options)
+        self.assertIsNotNone(plugin.validate_options)
+
+    def test_api_v1_callbacks_work_in_spawned_process(self):
+        options = {"ptype": "u", "mindim": 2, "maxdim": 2}
+        library_options = {
+            "variable_size": "default",
+            "test_feasibility_problems": 0,
+        }
+        with multiprocessing.get_context("spawn").Pool(1) as pool:
+            selected = pool.apply(
+                _spawn_select_s2mpj,
+                (options, library_options),
+            )
+        self.assertIn("ROSENBR", selected)
+
+    def test_collect_info_reads_committed_metadata(self):
+        rows = s2mpj_collect_info()
+        self.assertGreater(len(rows), 0)
+        self.assertIn("problem_name", rows[0])
 
 
 if __name__ == "__main__":

@@ -10,12 +10,33 @@ This repository preserves only the files relevant to Python users from the origi
 - **`src/list_of_python_problems`**: A listing of all available problems.
 - **`src/s2mpjlib.py`**: Supporting library script.
 
+## OptiProfiler Lifecycle
+
+S2MPJ is the bundled default Python problem library in OptiProfiler. Ordinary
+users install it with the core `optiprofiler` distribution and should not
+install this repository as a separate Python package. It is discoverable under
+the public name `s2mpj`:
+
+```python
+from optiprofiler import list_problem_libraries
+
+assert "s2mpj" in list_problem_libraries()
+```
+
+Select it with `benchmark(..., plibs=["s2mpj"])`; no custom filesystem path is
+needed. Removing `optiprofiler` also removes its bundled S2MPJ files, but it
+does not remove benchmark output or other user data.
+
+This repository is synchronized for OptiProfiler maintenance. A synchronization
+commit does not update an already installed core package automatically. Users
+receive a new S2MPJ snapshot only after OptiProfiler updates its locked gitlink
+and publishes or installs a matching core revision.
+
 ## Configuration
 
 The file `config.txt` in this directory controls how `s2mpj_select` filters problems (e.g., `variable_size` and `test_feasibility_problems`). See the comments in `config.txt` for a full description of each option.
 
-S2MPJ is still the default bundled Python problem library in OptiProfiler. This
-repository therefore keeps the legacy `s2mpj_load` / `s2mpj_select` interface
+This repository keeps the legacy `s2mpj_load` / `s2mpj_select` interface
 while also exposing the same API-v1 adapter callbacks used by separately
 installed problem-library plugins.
 

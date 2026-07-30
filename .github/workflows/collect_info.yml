@@ -1,7 +1,7 @@
 name: Collect Info
 
-# Prevent new runs from canceling in-progress runs (e.g. workflow_run re-trigger).
-# When Sync completes again, we avoid "The operation was canceled" on the previous collect run.
+# Metadata collection is a maintainer operation. It never promotes or commits a
+# newly detected upstream snapshot.
 concurrency:
   group: collect-info
   cancel-in-progress: false
@@ -15,12 +15,6 @@ concurrency:
 # 6. Run in python 's_getInfo.py' to get problem information for python
 # 7. Upload 'probinfo_python.csv', 'feasibility_python.txt', 'timeout_problems_python.txt', and 'log_python.txt' as artifacts
 on:
-  # Run after the sync workflow completes to ensure we have the latest problems
-  workflow_run:
-    workflows: ["Sync S2MPJ Python Subset"]
-    types:
-      - completed
-  # Allow manual triggering from the Actions tab
   workflow_dispatch:
 
 jobs:
@@ -58,7 +52,7 @@ jobs:
           cp -r .github/actions/collect_info/* .
       
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.x'
 

@@ -4,7 +4,8 @@ on:
   push:
   pull_request:
   schedule:
-    - cron: "23 2 * * *"
+    # 07:00 Beijing time.
+    - cron: "0 23 * * *"
   workflow_dispatch:
 
 permissions:

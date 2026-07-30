@@ -1,74 +1,136 @@
-name: Sync S2MPJ Python Subset
+name: Check S2MPJ Upstream
 
 on:
-  push:
   schedule:
-    # Run once a day at 00:00 UTC to check for updates
-    - cron: '0 0 * * *'
+    # 07:20 Beijing time, after the daily pinned-snapshot CI.
+    - cron: "20 23 * * *"
   workflow_dispatch:
-    # Allows manual triggering of the workflow from the GitHub Actions tab
 
 permissions:
-  contents: write
+  contents: read
+  issues: write
 
 jobs:
-  sync-and-filter:
+  check:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - name: Checkout Local Repository
+      - name: Checkout pinned provider snapshot
         uses: actions/checkout@v4
 
-      - name: Configure Git Identity
-        # Set up the git user to be the GitHub Actions bot for commits
+      - name: Fetch and compare the latest upstream subset
+        id: audit
+        shell: bash
         run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          set -euo pipefail
+          upstream="$RUNNER_TEMP/S2MPJ"
+          candidate="$RUNNER_TEMP/candidate"
+          report="$RUNNER_TEMP/upstream-update-report.md"
 
-      - name: Sync and Filter Files
-        run: |
-          # 1. Attempt to clone the upstream repository
-          # We check the exit code to ensure the clone was successful before proceeding.
-          echo "Cloning upstream repository..."
-          if ! git clone --depth 1 https://github.com/GrattonToint/S2MPJ.git temp_upstream; then
-            echo "::error::Failed to fetch upstream repository. Aborting sync to prevent data loss."
-            exit 1
+          git clone --depth 1 https://github.com/GrattonToint/S2MPJ.git "$upstream"
+          test -d "$upstream/python_problems"
+          test -f "$upstream/list_of_python_problems"
+          mkdir -p "$candidate"
+          cp -R "$upstream/python_problems" "$candidate/python_problems"
+          cp "$upstream/list_of_python_problems" "$candidate/list_of_python_problems"
+
+          upstream_commit="$(git -C "$upstream" rev-parse HEAD)"
+          upstream_subject="$(git -C "$upstream" show -s --format=%s HEAD)"
+          upstream_date="$(git -C "$upstream" show -s --format=%cI HEAD)"
+          {
+            echo "# S2MPJ Python upstream update report"
+            echo
+            echo "- Provider commit: \`${GITHUB_SHA}\`"
+            echo "- Latest upstream commit: \`${upstream_commit}\`"
+            echo "- Latest upstream date: \`${upstream_date}\`"
+            echo "- Latest upstream subject: ${upstream_subject}"
+            echo
+          } > "$report"
+
+          set +e
+          diff -qr --exclude=.DS_Store --exclude=__pycache__ --exclude='*.pyc' \
+            src/python_problems "$candidate/python_problems" > "$RUNNER_TEMP/tree.diff"
+          diff_status=$?
+          set -e
+          if [ "$diff_status" -gt 1 ]; then
+            echo "::error::Managed-tree comparison failed with status $diff_status"
+            exit "$diff_status"
           fi
 
-          echo "Upstream cloned successfully. Syncing files..."
-
-          # 2. Clean managed files in current workspace for fresh sync
-          # Only remove the specific files/folders we are syncing.
-          mkdir -p src
-          rm -rf src/python_problems src/list_of_python_problems
-
-          # 3. Copy only the specific files/folders we want from the temporary upstream directory
-          echo "Copying selected files..."
-          
-          # Copy the 'python_problems' directory
-          if [ -d "temp_upstream/python_problems" ]; then
-            cp -r temp_upstream/python_problems src/
+          if [ "$diff_status" = 0 ] \
+             && cmp -s src/list_of_python_problems "$candidate/list_of_python_problems"; then
+            echo "No managed-file changes were detected." >> "$report"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           else
-            echo "::warning::Dir 'python_problems' not found in upstream"
-          fi
-          
-          # Copy the 'list_of_python_problems' file
-          if [ -f "temp_upstream/list_of_python_problems" ]; then
-            cp temp_upstream/list_of_python_problems src/
-          else 
-            echo "::warning::File 'list_of_python_problems' not found in upstream"
+            {
+              echo "A candidate update is available. It has not been applied."
+              echo
+              echo '```text'
+              sed -n '1,300p' "$RUNNER_TEMP/tree.diff"
+              difference_count="$(wc -l < "$RUNNER_TEMP/tree.diff" | tr -d ' ')"
+              if [ "$difference_count" -gt 300 ]; then
+                echo "... file comparison truncated after 300 lines."
+              fi
+              if ! cmp -s src/list_of_python_problems "$candidate/list_of_python_problems"; then
+                echo "Files differ: src/list_of_python_problems"
+              fi
+              echo '```'
+            } >> "$report"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-          # 4. Remove the temporary upstream directory
-          rm -rf temp_upstream
+          cp "$report" upstream-update-report.md
 
-          # 5. Commit and push the changes
-          git add src
-          
-          # Check if there are any changes staged for commit
-          if git diff --staged --quiet; then
-            echo "No changes detected. The 'src' folder is up to date."
-          else
-            echo "Updates detected. Committing changes..."
-            git commit -m "Auto-sync subset files from GrattonToint/S2MPJ"
-            git push
-          fi
+      - name: Upload comparison report
+        uses: actions/upload-artifact@v4
+        with:
+          name: s2mpj-python-upstream-report
+          path: upstream-update-report.md
+
+      - name: Create or update the upstream notification
+        uses: actions/github-script@v7
+        env:
+          UPDATE_AVAILABLE: ${{ steps.audit.outputs.changed }}
+        with:
+          script: |
+            const fs = require("fs");
+            const title = "Upstream update available: GrattonToint/S2MPJ";
+            const marker = "<!-- optiprofiler-upstream-update:s2mpj-python -->";
+            const report = fs.readFileSync("upstream-update-report.md", "utf8");
+            const { owner, repo } = context.repo;
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: "open", per_page: 100
+            });
+            const existing = issues.find(
+              issue => !issue.pull_request && issue.title === title && issue.body?.includes(marker)
+            );
+
+            if (process.env.UPDATE_AVAILABLE === "true") {
+              try {
+                await github.rest.issues.getLabel({ owner, repo, name: "upstream-update" });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+                await github.rest.issues.createLabel({
+                  owner, repo, name: "upstream-update", color: "FBCA04",
+                  description: "A newer upstream snapshot requires maintainer review"
+                });
+              }
+              const body = `${marker}\n${report}\n\nThis workflow is notification-only. Review and promote the snapshot manually.`;
+              if (existing) {
+                await github.rest.issues.update({
+                  owner, repo, issue_number: existing.number, body, labels: ["upstream-update"]
+                });
+              } else {
+                await github.rest.issues.create({
+                  owner, repo, title, body, labels: ["upstream-update"]
+                });
+              }
+            } else if (existing) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: existing.number,
+                body: "The pinned provider snapshot now matches the managed upstream files. Closing this notification."
+              });
+              await github.rest.issues.update({
+                owner, repo, issue_number: existing.number, state: "closed"
+              });
+            }

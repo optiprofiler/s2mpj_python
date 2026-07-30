@@ -27,10 +27,11 @@ Select it with `benchmark(..., plibs=["s2mpj"])`; no custom filesystem path is
 needed. Removing `optiprofiler` also removes its bundled S2MPJ files, but it
 does not remove benchmark output or other user data.
 
-This repository is synchronized for OptiProfiler maintenance. A synchronization
-commit does not update an already installed core package automatically. Users
-receive a new S2MPJ snapshot only after OptiProfiler updates its locked gitlink
-and publishes or installs a matching core revision.
+This repository keeps a reviewed S2MPJ snapshot for OptiProfiler maintenance.
+An automated workflow checks upstream and reports differences, but it never
+changes `src/`, metadata, or the OptiProfiler lock. Users receive a new S2MPJ
+snapshot only after maintainers review the candidate, commit it explicitly,
+update the locked gitlink, and publish or install a matching core revision.
 
 ## Configuration
 
@@ -97,7 +98,11 @@ python -m unittest discover -s tests -p 'test_*.py'
 
 ## Maintenance
 
-This repository is **automatically synchronized** with the upstream `GrattonToint/S2MPJ` repository via GitHub Actions. It checks for updates daily to ensure the problem set remains current.
+`Check S2MPJ Upstream` compares the managed Python subset with the latest
+`GrattonToint/S2MPJ` revision every day. A difference creates or updates an
+`upstream-update` issue and uploads a report. The workflow has no permission to
+push source changes. `Collect Info` is manual and uploads candidate metadata as
+an artifact; adopting either source or metadata requires a reviewed commit.
 
 ## Provenance and Citation
 

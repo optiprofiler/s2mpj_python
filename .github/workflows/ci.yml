@@ -56,3 +56,39 @@ jobs:
       - name: Run adapter smoke and random tests
         run: |
           python -m unittest discover -s tests -p 'test_*.py'
+
+      - name: Check source redistribution notices
+        run: |
+          git archive --format=zip --output="$RUNNER_TEMP/s2mpj-python.zip" HEAD
+          python tests/check_distribution.py "$RUNNER_TEMP/s2mpj-python.zip"
+
+      - name: Build core artifacts with the candidate bundled provider
+        run: |
+          rsync -a --exclude=.git --exclude=.github --exclude=optiprofiler \
+            --exclude=tests --exclude=__pycache__ --exclude='*.pyc' \
+            ./ optiprofiler/python/optiprofiler/problem_libs/s2mpj/
+          python -m pip install build
+          python -m build optiprofiler
+          python tests/check_distribution.py optiprofiler/dist/*
+
+      - name: Fresh wheel bundled-provider smoke
+        shell: bash
+        run: |
+          python -m pip uninstall -y optiprofiler
+          python -m pip install --no-deps optiprofiler/dist/*.whl
+          cd "$RUNNER_TEMP"
+          python - <<'PY'
+          from pathlib import Path
+          import numpy as np
+          from optiprofiler import list_problem_libraries
+          from optiprofiler.problem_libs import s2mpj
+          assert 's2mpj' in list_problem_libraries()
+          plugin = s2mpj.get_problem_library()
+          options = plugin.validate_options(plugin.get_default_options())
+          assert 'ROSENBR' in plugin.select({'ptype': 'u', 'maxdim': 2}, options)
+          p = plugin.load('HS13', options)
+          np.testing.assert_allclose(p.hcub(p.x0)[0], np.diag([-18, 0]))
+          root = Path(s2mpj.__file__).parent
+          assert (root / 'LICENCE.txt').is_file()
+          assert (root / 'THIRD_PARTY_NOTICES.md').is_file()
+          PY

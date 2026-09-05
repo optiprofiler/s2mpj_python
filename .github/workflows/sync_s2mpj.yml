@@ -30,6 +30,7 @@ jobs:
           git clone --depth 1 https://github.com/GrattonToint/S2MPJ.git "$upstream"
           test -d "$upstream/python_problems"
           test -f "$upstream/list_of_python_problems"
+          test -f "$upstream/LICENCE.txt"
           mkdir -p "$candidate"
           cp -R "$upstream/python_problems" "$candidate/python_problems"
           cp "$upstream/list_of_python_problems" "$candidate/list_of_python_problems"
@@ -58,7 +59,8 @@ jobs:
           fi
 
           if [ "$diff_status" = 0 ] \
-             && cmp -s src/list_of_python_problems "$candidate/list_of_python_problems"; then
+             && cmp -s src/list_of_python_problems "$candidate/list_of_python_problems" \
+             && cmp -s LICENCE.txt "$upstream/LICENCE.txt"; then
             echo "No managed-file changes were detected." >> "$report"
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
@@ -73,6 +75,9 @@ jobs:
               fi
               if ! cmp -s src/list_of_python_problems "$candidate/list_of_python_problems"; then
                 echo "Files differ: src/list_of_python_problems"
+              fi
+              if ! cmp -s LICENCE.txt "$upstream/LICENCE.txt"; then
+                echo "Files differ: LICENCE.txt (license review required)"
               fi
               echo '```'
             } >> "$report"

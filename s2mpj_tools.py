@@ -253,7 +253,8 @@ def s2mpj_load(problem_name, *args):
         Hx = _getHx(p, name, x)
         if Hx is None: return [np.full((x.size, x.size), np.nan)] * (idx_cle.size + idx_cge.size)
         le = [Hx[i] for i in idx_cle] if idx_cle.size > 0 else []
-        ge = [Hx[i] for i in idx_cge] if idx_cge.size > 0 else []
+        # Lower bounds use cl - c(x), so both derivative orders change sign.
+        ge = [-Hx[i] for i in idx_cge] if idx_cge.size > 0 else []
         return le + ge
 
     def jceq(x):

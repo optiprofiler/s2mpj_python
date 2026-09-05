@@ -2,6 +2,20 @@
 
 This repository provides a specialized Python-only subset of the [S2MPJ](https://github.com/GrattonToint/S2MPJ) collection.
 
+## Paper backport and attribution
+
+This candidate retains the paper provider snapshot
+`0c59ff69bfd27a2b7a4c0af1063639b67845b2c4`, including its problem sources,
+selection metadata, configuration and public interface. The adapter correction
+negates lower-bound constraint Hessians, consistently with its values and
+Jacobians. Regression tests cover both bounds and constraint/multiplier order.
+
+The upstream S2MPJ sources are distributed under BSD-3-Clause. The unmodified
+official [LICENCE.txt](LICENCE.txt) and [source and citation notice](THIRD_PARTY_NOTICES.md)
+record the authors, paper, exact license revision and retained source differences.
+The license revision does not indicate a numerical source update or assign
+copyright or a license to independently authored OptiProfiler additions.
+
 ## Contents
 
 This repository preserves only the files relevant to Python users from the original source. These files are located in the `src/` directory:

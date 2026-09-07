@@ -35,6 +35,13 @@ update the locked gitlink, and publish or install a matching core revision.
 
 ## Configuration
 
+Selection limits use finite integer lower bounds (`mindim >= 1`, other
+`min* >= 0`). Each of `maxdim`, `maxb`, `maxlcon`, `maxnlcon` and `maxcon`
+accepts an integer at least the corresponding lower bound or `float('inf')`
+for no upper cutoff. NaN and negative infinity are not valid limits.
+`benchmark` validates these inputs; direct `s2mpj_select` callers should
+provide criteria satisfying the same contract.
+
 The file `config.txt` in this directory controls how `s2mpj_select` filters problems (e.g., `variable_size` and `test_feasibility_problems`). See the comments in `config.txt` for a full description of each option.
 
 This repository keeps the legacy `s2mpj_load` / `s2mpj_select` interface

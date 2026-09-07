@@ -235,7 +235,7 @@ class CUTEst_problem:
             v      = v.reshape(-1,1)
             iclist = [ self.congrps[i] for i in clist ]
             self.getglobs()
-            return self.evalHJv( "Jvt", iclist, x, v, [] )
+            return self.evalHJv( "Jtv", iclist, x, v, [] )
         else:
             print( " " )
             print( 'ERROR: problem '+self.name+' has no constraint!' )
@@ -862,16 +862,18 @@ class CUTEst_problem:
                     if egname == "TRIVIAL":
                         HJv[ic] = to_scalar(gin.transpose().dot( v )) / gsc
                     else:
-                        fa, grada = feval( self.name, egname, fin, ig )
+                        fa, grada = eval('self.'+egname+'( self, 2, fin, ig )' )
                         HJv[ic] = to_scalar(grada * gin.transpose().dot( v )) / gsc
                 else:
                     HJv[ic] = np.nan
             elif mode == "Jtv":
+                # Each constraint group consumes its own multiplier.
+                ic += 1
                 if derlvl >= 1:
                     if egname == "TRIVIAL":
                         HJv += gin * to_scalar(v[ic]) / gsc
                     else:
-                        fa, grada = feval( self.name, egname, fin, ig )
+                        fa, grada = eval('self.'+egname+'( self, 2, fin, ig )' )
                         HJv += grada * gin * to_scalar(v[ic]) / gsc
                 else:
                     HJv[ic] = np.nan

@@ -5,10 +5,13 @@ This repository provides a specialized Python-only subset of the [S2MPJ](https:/
 ## Paper backport and attribution
 
 This candidate retains the paper provider snapshot
-`0c59ff69bfd27a2b7a4c0af1063639b67845b2c4`, including its problem sources,
+`0c59ff69bfd27a2b7a4c0af1063639b67845b2c4`, including its individual problem sources,
 selection metadata, configuration and public interface. The adapter correction
 negates lower-bound constraint Hessians, consistently with its values and
 Jacobians. Regression tests cover both bounds and constraint/multiplier order.
+The upstream-derived helper also has targeted Jacobian-product corrections:
+native group dispatch, distinct constraint weights and selected-row dispatch.
+These do not change problem definitions, selection metadata or initial points.
 
 The upstream S2MPJ sources are distributed under BSD-3-Clause. The unmodified
 official [LICENCE.txt](LICENCE.txt) and [source and citation notice](THIRD_PARTY_NOTICES.md)
@@ -25,6 +28,13 @@ This repository preserves only the files relevant to Python users from the origi
 - **`src/s2mpjlib.py`**: Supporting library script.
 
 ## Configuration
+
+Selection limits use finite integer lower bounds (`mindim >= 1`, other
+`min* >= 0`). Each of `maxdim`, `maxb`, `maxlcon`, `maxnlcon` and `maxcon`
+accepts an integer at least the corresponding lower bound or `float('inf')`
+for no upper cutoff. NaN and negative infinity are not valid limits.
+`benchmark` validates these inputs; direct `s2mpj_select` callers should
+provide criteria satisfying the same contract.
 
 The file `config.txt` in this directory controls how `s2mpj_select` filters problems (e.g., `variable_size` and `test_feasibility_problems`). See the comments in `config.txt` for a full description of each option.
 

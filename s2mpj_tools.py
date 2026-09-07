@@ -295,23 +295,24 @@ def s2mpj_select(options):
           ``'b'`` (bound constrained), ``'l'`` (linearly constrained),
           and ``'n'`` (nonlinearly constrained), such as ``'b'``,
           ``'ul'``, ``'ubn'``. Default is ``'ubln'``.
-        - **mindim** (*int*) -- Minimum dimension. Default is ``1``.
-        - **maxdim** (*int*) -- Maximum dimension. Default is ``inf``.
+        - **mindim** (*int*) -- Finite minimum dimension. Default is ``1``.
+        - **maxdim** (*int or positive infinity*) -- Maximum dimension.
+          Default is ``float('inf')``.
         - **minb** (*int*) -- Minimum number of bound constraints.
           Default is ``0``.
-        - **maxb** (*int*) -- Maximum number of bound constraints.
+        - **maxb** (*int or positive infinity*) -- Maximum number of bound constraints.
           Default is ``inf``.
         - **minlcon** (*int*) -- Minimum number of linear constraints.
           Default is ``0``.
-        - **maxlcon** (*int*) -- Maximum number of linear constraints.
+        - **maxlcon** (*int or positive infinity*) -- Maximum number of linear constraints.
           Default is ``inf``.
         - **minnlcon** (*int*) -- Minimum number of nonlinear constraints.
           Default is ``0``.
-        - **maxnlcon** (*int*) -- Maximum number of nonlinear constraints.
+        - **maxnlcon** (*int or positive infinity*) -- Maximum number of nonlinear constraints.
           Default is ``inf``.
         - **mincon** (*int*) -- Minimum total number of linear and
           nonlinear constraints. Default is ``0``.
-        - **maxcon** (*int*) -- Maximum total number of linear and
+        - **maxcon** (*int or positive infinity*) -- Maximum total number of linear and
           nonlinear constraints. Default is ``inf``.
         - **oracle** (*int*) -- Oracle provided by the problem. ``0``
           means zeroth-order, ``1`` means first-order, ``2`` means
@@ -326,6 +327,12 @@ def s2mpj_select(options):
 
     Notes
     -----
+    Supply finite integer lower limits: ``mindim >= 1`` and the other
+    ``min* >= 0``. Each upper limit is an integer at least its lower limit,
+    or positive infinity (no upper cutoff). NaN and negative infinity are
+    not valid selection limits. OptiProfiler validates this contract for
+    ``benchmark`` calls; direct selector callers must supply valid criteria.
+
     1. All information about the problems can be found in the CSV file
        ``probinfo_python.csv`` in the same directory as this module.
 

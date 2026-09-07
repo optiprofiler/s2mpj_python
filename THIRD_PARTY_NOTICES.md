@@ -28,16 +28,19 @@ The license was adopted separately from numerical source updates. On
 license revision above:
 
 - Provider baseline: `0c59ff69bfd27a2b7a4c0af1063639b67845b2c4`.
-- Unchanged Git tree for `src/`: `531090480933a017cf7a65010eea6bb0ebf62ffb`.
+- Source tree at that review: `531090480933a017cf7a65010eea6bb0ebf62ffb`.
 - 1,105 of 1,106 tracked source files match upstream byte for byte.
-- `src/s2mpjlib.py` is an upstream-derived supporting library with a retained
-  local version: two derivative-product call sites use `feval(...)` where
-  current upstream uses calls to methods of `self`. This historical
-  difference is recorded for a separate numerical review, not promoted here.
+- `src/s2mpjlib.py` is an upstream-derived supporting library. A targeted
+  numerical review on 2026-09-07 corrected its two undefined `feval(...)`
+  calls to the upstream `self` method dispatch, incremented the constraint
+  multiplier index in `Jtv`, and corrected the `cIJtxv` mode spelling.
+  The latter two fixes also differ from the cited upstream revision.
+  Explicit Jacobians and central differences cover full and selected
+  constraint products. No individual problem source or metadata was updated.
 
 The license revision is **not** a claim that every file was synchronized to
 that revision. This paper backport freezes the original adapter interface, metadata and
-retained source together. It only corrects lower-bound constraint Hessian
+retained source together. It corrects the helper products described above and lower-bound constraint Hessian
 signs and adds regression tests and redistribution information. It does not
 adopt later provider interfaces or regenerate the problem-selection data.
 
@@ -48,13 +51,11 @@ adopt later provider interfaces or regenerate the problem-selection data.
 OptiProfiler integration. Generated metadata is derived from the
 wrapped upstream problems; it is not a separately authored problem collection.
 
-Git history records adapter commits by `Huang_Mac`, but commit authorship
-alone does not establish the copyright ownership of every contribution.
-The upstream license notice does not assign those independent additions to
-Gratton and Toint, or automatically license them. This update does not assign
-new ownership or choose a repository-wide license for independent additions;
-maintainers must confirm that separately before claiming a license for the
-whole combined distribution.
+The upstream `LICENCE.txt` applies to the S2MPJ material identified above.
+OptiProfiler integration code retains its existing OptiProfiler authorization
+and attribution. This notice does not transfer authorship of those independent
+additions to Gratton and Toint, change existing licenses, or reassign third-party
+copyrights.
 
 ## Citation and distribution
 

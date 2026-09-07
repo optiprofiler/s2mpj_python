@@ -9,10 +9,12 @@ on:
     # Allows manual triggering of the workflow from the GitHub Actions tab
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   sync-and-filter:
+    # Frozen paper branches must not synchronize or push upstream sources.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Local Repository

@@ -1,5 +1,7 @@
 # S2MPJ Python Subset
 
+**OptiProfiler 2.0:** See [compatibility and release boundaries](V2_COMPATIBILITY.md).
+
 This repository provides a specialized Python-only subset of the [S2MPJ](https://github.com/GrattonToint/S2MPJ) collection.
 
 ## Contents
@@ -43,6 +45,8 @@ for no upper cutoff. NaN and negative infinity are not valid limits.
 provide criteria satisfying the same contract.
 
 The file `config.txt` in this directory controls how `s2mpj_select` filters problems (e.g., `variable_size` and `test_feasibility_problems`). See the comments in `config.txt` for a full description of each option.
+With `variable_size='all'`, the default instance is returned together with the
+other sizes whenever it satisfies the criteria.
 
 This repository keeps the legacy `s2mpj_load` / `s2mpj_select` interface
 while also exposing the same API-v1 adapter callbacks used by separately
@@ -86,6 +90,20 @@ environment variables, `config.txt`, then built-in defaults. You can also set
 adapter merges these layers first and validates the final mapping once, so an
 explicit valid per-run value can replace an invalid lower-priority value.
 
+## Native Loading
+
+Native problem files load under an identity owned by this installation.
+Another S2MPJ checkout imported in the same process cannot answer for this one,
+whichever is imported first. The adapter does not change `sys.path`, and it
+neither reads nor replaces the global names `python_problems` and `s2mpjlib`.
+
+Invalid native metadata fails closed. A wrong shape, NaN entry or impossible
+bound raises `ValueError` instead of dropping the affected constraint. A linear
+constraint whose values or Jacobian cannot be read at `x0` raises `RuntimeError`
+with the original cause. Problems without linear constraints need no Jacobian
+at load time, so zeroth-order models keep working. No upstream problem file is
+edited or repaired.
+
 ## Testing
 
 The `CI` workflow runs daily and on pushes. It checks the OptiProfiler adapter layer by:
@@ -97,6 +115,8 @@ The `CI` workflow runs daily and on pushes. It checks the OptiProfiler adapter l
 - checking the OptiProfiler API-v1 adapter callbacks used by the core loader;
 - checking nonlinear lower/upper/two-sided constraint Hessians against Jacobian
   differences, including stacking and multiplier order;
+- checking the provider-owned native identity in both import orders, and that
+  invalid native metadata and failed linear probes fail closed;
 - sampling a few additional small problems each day with at most two numerical-library threads.
 
 Locally, from this repository:

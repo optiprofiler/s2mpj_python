@@ -75,7 +75,7 @@ class ConstraintHessianTests(unittest.TestCase):
 
     def test_upper_lower_two_sided_and_multiplier_order(self):
         module = SimpleNamespace(ADAPTERCONSTRAINTS=MixedConstraints)
-        with patch('s2mpj_tools.importlib.import_module', return_value=module):
+        with patch('s2mpj_tools._import_native_problem', return_value=module):
             problem = s2mpj_load('ADAPTERCONSTRAINTS')
         raw = MixedConstraints()
         x = raw.x0

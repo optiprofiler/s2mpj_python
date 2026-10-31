@@ -1,11 +1,71 @@
-import sys, os, io, re, importlib
+import builtins, hashlib, importlib.util, sys, os, io, re, threading
 from collections.abc import Mapping
 from contextlib import redirect_stdout
+from functools import lru_cache
 import numpy as np
 import pandas as pd
 
 from optiprofiler.opclasses import Problem
 from optiprofiler.utils import get_logger, shorten_log_message
+
+
+# Unmodified native problem files run `from s2mpjlib import *`, and historically
+# lived under the global package name `python_problems`. Those names are shared
+# by every S2MPJ checkout in a process, so the first import would answer for all
+# of them. Native modules therefore use an identity owned by this installation,
+# and neither sys.path nor the global module names are touched.
+_NATIVE_SRC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src')
+_NATIVE_MODULE_PREFIX = '_optiprofiler_s2mpj_' + hashlib.sha256(
+    os.path.realpath(_NATIVE_SRC_DIR).encode()
+).hexdigest()[:16]
+_NATIVE_IMPORT_LOCK = threading.RLock()
+
+
+def _exec_native_file(module_name, path, module_builtins=None):
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    module = importlib.util.module_from_spec(spec)
+    if module_builtins is not None:
+        # exec() honors a __builtins__ entry already present in the globals.
+        module.__dict__['__builtins__'] = module_builtins
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        sys.modules.pop(module_name, None)
+        raise
+    return module
+
+
+@lru_cache(maxsize=1)
+def _native_builtins():
+    """Return builtins resolving `s2mpjlib` to this provider's own helper."""
+    helper_name = f'{_NATIVE_MODULE_PREFIX}_helper'
+    helper = sys.modules.get(helper_name)
+    if helper is None:
+        helper = _exec_native_file(
+            helper_name,
+            os.path.join(_NATIVE_SRC_DIR, 's2mpjlib.py'),
+        )
+
+    def scoped_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == 's2mpjlib' and level == 0:
+            return helper
+        return builtins.__import__(name, globals, locals, fromlist, level)
+
+    return {**vars(builtins), '__import__': scoped_import}
+
+
+def _import_native_problem(problem_name):
+    """Import one unmodified native problem under the provider-owned identity."""
+    path = os.path.join(_NATIVE_SRC_DIR, 'python_problems', f'{problem_name}.py')
+    if not problem_name.isidentifier() or not os.path.isfile(path):
+        raise ModuleNotFoundError(f"S2MPJ has no problem named '{problem_name}'.")
+    module_name = f'{_NATIVE_MODULE_PREFIX}_problem_{problem_name}'
+    with _NATIVE_IMPORT_LOCK:
+        module = sys.modules.get(module_name)
+        if module is None:
+            module = _exec_native_file(module_name, path, _native_builtins())
+    return module
 
 
 def s2mpj_load(problem_name, *args, library_options=None):
@@ -60,22 +120,7 @@ def s2mpj_load(problem_name, *args, library_options=None):
     if library_options is not None:
         s2mpj_validate_options(library_options)
 
-    # Add the path of the problem to the system path.
-    try:
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        src_dir = os.path.join(current_dir, 'src')
-        if src_dir not in sys.path:
-            # Add the subfolder 'src' under the current directory to the system path (containing 's2mpjlib.py').
-            sys.path.insert(0, src_dir)
-        python_problems_dir = os.path.join(src_dir, 'python_problems')
-        if python_problems_dir not in sys.path:
-            # Add the subfolder 'python_problems' under the 'src' directory to the system path.
-            sys.path.insert(0, python_problems_dir)
-    except Exception as err:
-        get_logger(__name__).warning(
-            f'Failed to add the path of Python problems of S2MPJ to the system path: {shorten_log_message(err)}'
-        )
-        raise
+    current_dir = os.path.dirname(os.path.abspath(__file__))
 
     # Check if 'problem_name' has the pattern '_n_m' or '_n'. If it has, find the position of the pattern and return the dimension 'n' and the number of constraints 'm'.
     # Note that when 'm' is 0, the pattern is '_n' instead of '_n_0'.
@@ -137,8 +182,8 @@ def s2mpj_load(problem_name, *args, library_options=None):
                             else:
                                 args = args + (selected_arg,)
 
-    # Import the problem module dynamically.
-    problem_module = importlib.import_module(f'python_problems.{problem_name}')
+    # Import the problem module under the provider-owned identity.
+    problem_module = _import_native_problem(problem_name)
     # Get the class from the module.
     problem_class = getattr(problem_module, problem_name)
     # Create an instance of the class from the module.

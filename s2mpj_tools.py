@@ -667,7 +667,10 @@ def s2mpj_select(options, library_options=None):
                         problem_names.append(problem_name)
                         continue
             
-            # For 'all' we just process all idxs
+            elif default_satisfy:
+                # 'all' returns every satisfying instance, including the
+                # default one (the variable-size rows above exclude it).
+                problem_names.append(problem_name)
             
             # Add problems with specific dimensions/constraints
             for idx in idxs:

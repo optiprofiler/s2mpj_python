@@ -159,6 +159,32 @@ class S2MPJPythonAdapterTests(unittest.TestCase):
         self.assertIn("CHEBYQAD_2", all_names)
         self.assertNotIn("CHEBYQAD_2", default_names)
 
+    def test_variable_size_all_includes_the_default_instance(self):
+        options = {"ptype": "n", "maxdim": 100, "maxb": 400, "maxcon": 400}
+        library_options = {"test_feasibility_problems": 0}
+        default = s2mpj_select(
+            dict(options), {**library_options, "variable_size": "default"},
+        )
+        everything = s2mpj_select(
+            dict(options), {**library_options, "variable_size": "all"},
+        )
+        # config.txt: "all" returns every satisfying version, so the default
+        # selection is a subset and no instance appears twice.
+        self.assertEqual(sorted(set(default) - set(everything)), [])
+        self.assertEqual(len(everything), len(set(everything)))
+        for name, dimension in (("ALJAZZAF", 10), ("ALJAZZAF_3_1", 3), ("ALJAZZAF_100_1", 100)):
+            self.assertIn(name, everything)
+            self.assertEqual(s2mpj_load(name).n, dimension)
+
+    def test_variable_size_all_still_applies_the_criteria(self):
+        names = s2mpj_select(
+            {"ptype": "n", "mindim": 11, "maxdim": 100, "maxb": 400, "maxcon": 400},
+            {"variable_size": "all", "test_feasibility_problems": 0},
+        )
+        # The 10-dimensional default fails the dimension filter.
+        self.assertNotIn("ALJAZZAF", names)
+        self.assertIn("ALJAZZAF_100_1", names)
+
     def test_config_environment_overrides_feasibility_selection(self):
         options = {
             "ptype": "ubln",

@@ -112,6 +112,12 @@ class NativeMetadataTests(unittest.TestCase):
         self.assert_rejected('variable bounds', xupper=np.array([-np.inf]))
         self.assert_rejected('constraint bounds', clower=np.array([np.inf]))
         self.assert_rejected('constraint bounds', cupper=np.array([-np.inf]))
+        # The native sentinel means the same as infinity.
+        self.assert_rejected('variable bounds', xlower=np.array([1e20]))
+        self.assert_rejected('constraint bounds', cupper=np.array([-1e20]))
+        # Crossed bounds cannot be satisfied.
+        self.assert_rejected('variable bounds', xlower=np.array([2.0]), xupper=np.array([1.0]))
+        self.assert_rejected('constraint bounds', clower=np.array([1.0]))
 
     def test_a_free_row_is_legitimate(self):
         problem = load(cupper=np.array([1e20]))

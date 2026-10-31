@@ -185,6 +185,11 @@ class S2MPJPythonAdapterTests(unittest.TestCase):
         self.assertNotIn("ALJAZZAF", names)
         self.assertIn("ALJAZZAF_100_1", names)
 
+    def test_unknown_encoded_instance_is_rejected(self):
+        # The default instance must not answer for a size that does not exist.
+        with self.assertRaisesRegex(ValueError, "no instance"):
+            s2mpj_load("ARGLALE_7")
+
     def test_config_environment_overrides_feasibility_selection(self):
         options = {
             "ptype": "ubln",

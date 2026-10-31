@@ -97,8 +97,8 @@ Another S2MPJ checkout imported in the same process cannot answer for this one,
 whichever is imported first. The adapter does not change `sys.path`, and it
 neither reads nor replaces the global names `python_problems` and `s2mpjlib`.
 
-Invalid native metadata fails closed. A wrong shape, NaN entry or impossible
-bound raises `ValueError` instead of dropping the affected constraint. A linear
+Invalid native metadata fails closed. A wrong shape, NaN entry, or impossible or
+crossed bound raises `ValueError` instead of dropping the affected constraint. A linear
 constraint whose values or Jacobian cannot be read at `x0` raises `RuntimeError`
 with the original cause. Problems without linear constraints need no Jacobian
 at load time, so zeroth-order models keep working. No upstream problem file is

@@ -128,7 +128,7 @@ def s2mpj_load(problem_name, *args, library_options=None):
     stored in the ``probinfo_python.csv`` file.
 
     Invalid native metadata fails closed: wrong shapes, NaN entries and
-    impossible bounds raise `ValueError`, and a linear constraint whose values
+    impossible or crossed bounds raise `ValueError`, and a linear constraint whose values
     or Jacobian cannot be read at ``x0`` raises `RuntimeError` with the
     original cause. No constraint is dropped and no NaN matrix is built.
     Problems without linear constraints need no Jacobian probe at load time.
@@ -172,6 +172,7 @@ def s2mpj_load(problem_name, *args, library_options=None):
 
     # Check csv file for the corresponding arguments.
     csv_file = os.path.join(current_dir, 'probinfo_python.csv')
+    resolved = False
     if match:
         df = pd.read_csv(csv_file, index_col=0)
         if problem_name in df.index:
@@ -211,6 +212,12 @@ def s2mpj_load(problem_name, *args, library_options=None):
                                 args = args + tuple(fixed_args) + (selected_arg,)
                             else:
                                 args = args + (selected_arg,)
+                            resolved = True
+        if not resolved:
+            raise ValueError(
+                f"S2MPJ problem '{problem_name}' has no instance with dimension "
+                f'{dim} and {mcon} constraints.'
+            )
 
     # Import the problem module under the provider-owned identity.
     problem_module = _import_native_problem(problem_name)
@@ -238,7 +245,7 @@ def s2mpj_load(problem_name, *args, library_options=None):
     x0 = _native_vector(name, 'initial point', p.x0, n)
     xl = _native_vector(name, 'variable lower bounds', p.xlower, n)
     xu = _native_vector(name, 'variable upper bounds', p.xupper, n)
-    if np.any(xl == np.inf) or np.any(xu == -np.inf):
+    if np.any(xl >= 1.0e+20) or np.any(xu <= -1.0e+20) or np.any(xl > xu):
         raise ValueError(f"Impossible variable bounds for S2MPJ problem '{name}'.")
     # We replace 1.0e+20 (which represents infinity) bounds with np.inf.
     xl = np.where(xl <= -1.0e+20, -np.inf, xl)
@@ -251,7 +258,7 @@ def s2mpj_load(problem_name, *args, library_options=None):
         )
     cl = _native_vector(name, 'constraint lower bounds', p.clower, m) if m > 0 else np.empty(0)
     cu = _native_vector(name, 'constraint upper bounds', p.cupper, m) if m > 0 else np.empty(0)
-    if np.any(cl == np.inf) or np.any(cu == -np.inf):
+    if np.any(cl >= 1.0e+20) or np.any(cu <= -1.0e+20) or np.any(cl > cu):
         raise ValueError(f"Impossible constraint bounds for S2MPJ problem '{name}'.")
     cl = np.where(cl <= -1.0e+20, -np.inf, cl)
     cu = np.where(cu >= 1.0e+20, np.inf, cu)

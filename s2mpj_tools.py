@@ -68,6 +68,30 @@ def _import_native_problem(problem_name):
     return module
 
 
+def _native_vector(problem_name, label, values, size):
+    """Return native metadata as a vector, rejecting a wrong shape or NaN."""
+    if hasattr(values, 'toarray'):
+        values = values.toarray()
+    try:
+        vector = np.atleast_1d(np.asarray(values, dtype=float))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"Invalid {label} for S2MPJ problem '{problem_name}': "
+            'the values are not numeric.'
+        ) from exc
+    if vector.size != size or (size > 0 and max(vector.shape) != size):
+        raise ValueError(
+            f"Invalid {label} for S2MPJ problem '{problem_name}': expected "
+            f'{size} entries, found shape {vector.shape}.'
+        )
+    if np.any(np.isnan(vector)):
+        raise ValueError(
+            f"Invalid {label} for S2MPJ problem '{problem_name}': NaN entries "
+            'leave a bound undefined, and it must not silently disappear.'
+        )
+    return vector.reshape(-1)
+
+
 def s2mpj_load(problem_name, *args, library_options=None):
     """
     Convert an S2MPJ problem name to a `Problem` instance.
@@ -102,6 +126,12 @@ def s2mpj_load(problem_name, *args, library_options=None):
     constraints. This happens when a problem accepts extra arguments to
     change its dimension or number of constraints. This information is
     stored in the ``probinfo_python.csv`` file.
+
+    Invalid native metadata fails closed: wrong shapes, NaN entries and
+    impossible bounds raise `ValueError`, and a linear constraint whose values
+    or Jacobian cannot be read at ``x0`` raises `RuntimeError` with the
+    original cause. No constraint is dropped and no NaN matrix is built.
+    Problems without linear constraints need no Jacobian probe at load time.
 
     See Also
     --------
@@ -202,21 +232,31 @@ def s2mpj_load(problem_name, *args, library_options=None):
     grad = lambda x: _getgrad(p, is_feasibility, name, x)
     hess = lambda x: _gethess(p, is_feasibility, name, x)
 
-    x0 = p.x0.flatten()
-    xl = p.xlower.flatten()
-    xu = p.xupper.flatten()
+    # Validate native metadata before building masks: a mask built on NaN
+    # would silently drop the corresponding bound or constraint.
+    n, m = p.n, getattr(p, 'm', 0)
+    x0 = _native_vector(name, 'initial point', p.x0, n)
+    xl = _native_vector(name, 'variable lower bounds', p.xlower, n)
+    xu = _native_vector(name, 'variable upper bounds', p.xupper, n)
+    if np.any(xl == np.inf) or np.any(xu == -np.inf):
+        raise ValueError(f"Impossible variable bounds for S2MPJ problem '{name}'.")
     # We replace 1.0e+20 (which represents infinity) bounds with np.inf.
     xl = np.where(xl <= -1.0e+20, -np.inf, xl)
     xu = np.where(xu >= 1.0e+20, np.inf, xu)
 
-    cl = p.clower.flatten() if hasattr(p, 'clower') else None
-    cu = p.cupper.flatten() if hasattr(p, 'cupper') else None
-    if cl is not None:
-        cl = np.where(cl <= -1.0e+20, -np.inf, cl)
-    if cu is not None:
-        cu = np.where(cu >= 1.0e+20, np.inf, cu)
-    idx_cl_finite = np.where(np.isfinite(cl))[0] if cl is not None else np.array([], dtype=int)
-    idx_cu_finite = np.where(np.isfinite(cu))[0] if cu is not None else np.array([], dtype=int)
+    if m > 0 and not (hasattr(p, 'clower') and hasattr(p, 'cupper')):
+        raise ValueError(
+            f"Invalid constraint bounds for S2MPJ problem '{name}': it declares "
+            f'{m} constraints without clower and cupper.'
+        )
+    cl = _native_vector(name, 'constraint lower bounds', p.clower, m) if m > 0 else np.empty(0)
+    cu = _native_vector(name, 'constraint upper bounds', p.cupper, m) if m > 0 else np.empty(0)
+    if np.any(cl == np.inf) or np.any(cu == -np.inf):
+        raise ValueError(f"Impossible constraint bounds for S2MPJ problem '{name}'.")
+    cl = np.where(cl <= -1.0e+20, -np.inf, cl)
+    cu = np.where(cu >= 1.0e+20, np.inf, cu)
+    idx_cl_finite = np.where(np.isfinite(cl))[0]
+    idx_cu_finite = np.where(np.isfinite(cu))[0]
 
     if not hasattr(p, 'lincons'):
         p.lincons = np.array([], dtype=int)
@@ -227,29 +267,16 @@ def s2mpj_load(problem_name, *args, library_options=None):
     if not hasattr(p, 'nge'):
         p.nge = 0
 
-    # The linear constraints are hidden in the cJx method output.
-    # cx = jx @ x0 - bx
-    if getattr(p, 'm', 0) == 0:
-        jx = np.empty((0, getattr(p, 'n', x0.size)))
-        bx = np.empty(0)
-    else:
-        buf = io.StringIO()
-        with redirect_stdout(buf):
-            try:
-                cx, jx = p.cJx(p.x0)[:2]
-                if hasattr(cx, 'toarray'):
-                    cx = cx.toarray()
-                if hasattr(jx, 'toarray'):
-                    jx = jx.toarray()
-                cx = cx.flatten()
-                bx = jx @ x0 - cx
-            except Exception as err:
-                _warn_s2mpj_evaluation_failure(name, 'the linear constraint Jacobian', err)
-                jx = np.full((getattr(p, 'm', 0), getattr(p, 'n', x0.size)), np.nan)
-                bx = np.full(getattr(p, 'm', 0), np.nan)
+    idx_native_eq = np.arange(p.nle, p.nle + p.neq)
+    if np.any(idx_native_eq >= m) or np.any(cl[idx_native_eq] != cu[idx_native_eq]) \
+            or not np.all(np.isfinite(cl[idx_native_eq])):
+        raise ValueError(
+            f"Invalid equality constraints for S2MPJ problem '{name}': each "
+            'needs equal finite bounds.'
+        )
 
     nonlincons = np.setdiff1d(np.arange(p.m), p.lincons)
-    idx_eq = np.intersect1d(np.arange(p.nle, p.nle + p.neq), idx_cl_finite)
+    idx_eq = idx_native_eq
     idx_ineq = np.setdiff1d(np.arange(p.m), np.arange(p.nle, p.nle + p.neq))
     idx_le = np.intersect1d(idx_ineq, idx_cu_finite)
     idx_ge = np.intersect1d(idx_ineq, idx_cl_finite)
@@ -260,6 +287,32 @@ def s2mpj_load(problem_name, *args, library_options=None):
     idx_ceq = np.intersect1d(idx_eq, nonlincons)
     idx_cge = np.intersect1d(idx_ge, nonlincons)
 
+    # The linear constraints are hidden in the cJx method output, cx = jx @ x - bx.
+    # Read them only when needed, and fail closed: NaN matrices would describe
+    # a less constrained problem, and a dropped row would be silently feasible.
+    idx_linear = np.union1d(idx_aeq, np.union1d(idx_aub_le, idx_aub_ge))
+    jx = bx = None
+    if idx_linear.size > 0:
+        try:
+            with redirect_stdout(io.StringIO()):
+                cx, jx = p.cJx(p.x0)[:2]
+            cx = (cx.toarray() if hasattr(cx, 'toarray') else np.asarray(cx)).flatten()
+            jx = jx.toarray() if hasattr(jx, 'toarray') else np.asarray(jx)
+            if cx.shape != (m,) or jx.shape != (m, n):
+                raise ValueError('Unexpected native constraint/Jacobian shape.')
+            if not (np.all(np.isfinite(cx[idx_linear]))
+                    and np.all(np.isfinite(jx[idx_linear, :]))):
+                raise ValueError('Non-finite linear constraint/Jacobian values.')
+            # A nonlinear row may be undefined at x0; only linear rows are used.
+            with np.errstate(invalid='ignore', over='ignore'):
+                bx = jx @ x0 - cx
+            if not np.all(np.isfinite(bx[idx_linear])):
+                raise ValueError('Non-finite linear constraint offsets.')
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to load linear constraints for S2MPJ problem '{name}'."
+            ) from exc
+
     # Note that in S2MPJ, the constraints are defined as:
     #  cl <= c(x) <= cu
     # Thus, the linear equality constraints are:
@@ -267,10 +320,10 @@ def s2mpj_load(problem_name, *args, library_options=None):
     # and the linear inequality constraints are:
     #  jx[idx_aub_le, :] @ x <= bx[idx_aub_le] + cu[idx_aub_le]
     #  -jx[idx_aub_ge, :] @ x <= -bx[idx_aub_ge] - cl[idx_aub_ge]
-    aeq = jx[idx_aeq, :] if jx is not None and idx_aeq.size > 0 else None
-    aub = np.vstack([jx[idx_aub_le, :], -jx[idx_aub_ge, :]]) if jx is not None and (idx_aub_le.size > 0 or idx_aub_ge.size > 0) else None
-    beq = bx[idx_aeq] + cu[idx_aeq] if bx is not None and idx_aeq.size > 0 else None
-    bub = np.concatenate([bx[idx_aub_le] + cu[idx_aub_le], -bx[idx_aub_ge] - cl[idx_aub_ge]]) if bx is not None and (idx_aub_le.size > 0 or idx_aub_ge.size > 0) else None
+    aeq = jx[idx_aeq, :] if idx_aeq.size > 0 else None
+    aub = np.vstack([jx[idx_aub_le, :], -jx[idx_aub_ge, :]]) if (idx_aub_le.size > 0 or idx_aub_ge.size > 0) else None
+    beq = bx[idx_aeq] + cu[idx_aeq] if idx_aeq.size > 0 else None
+    bub = np.concatenate([bx[idx_aub_le] + cu[idx_aub_le], -bx[idx_aub_ge] - cl[idx_aub_ge]]) if (idx_aub_le.size > 0 or idx_aub_ge.size > 0) else None
 
     # Construct nonlinear constraint functions
     # Remind that in S2MPJ, the constraints are defined as:

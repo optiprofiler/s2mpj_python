@@ -1,5 +1,16 @@
 # S2MPJ sources and redistribution notice
 
+This repository combines upstream S2MPJ files with the OptiProfiler adapter. Both
+use BSD 3-Clause terms, but they are separate licenses with different copyright
+holders, and neither covers the other component.
+
+## Component inventory
+
+| Component | Paths | Terms | License text |
+| --- | --- | --- | --- |
+| Upstream S2MPJ problem files and tools | `src/` | BSD-3-Clause, S. Gratton and Ph. L. Toint | `LICENCE.txt` |
+| OptiProfiler adapter, metadata, documentation, tests and workflows | Root `*.py` and `*.md`, `config.txt`, `probinfo_python.csv`, `tests/`, `.github/`, `.gitattributes`, `.gitignore` | BSD-3-Clause, Cunxin Huang | `LICENSE` |
+
 ## Upstream S2MPJ
 
 The files in `src/` originate from [S2MPJ](https://github.com/GrattonToint/S2MPJ)
@@ -46,15 +57,16 @@ including license differences; adopting changes always requires review.
 ## OptiProfiler additions
 
 `__init__.py`, `s2mpj_tools.py`, configuration, generated
-`probinfo_python.csv`, tests and maintenance workflows provide the
-OptiProfiler integration. Generated metadata is derived from the
+`probinfo_python.csv`, tests, documentation and maintenance workflows provide
+the OptiProfiler integration. Generated metadata is derived from the
 wrapped upstream problems; it is not a separately authored problem collection.
 
-The upstream `LICENCE.txt` applies to the S2MPJ material identified above.
-OptiProfiler integration code retains its existing OptiProfiler authorization
-and attribution. This notice does not transfer authorship of those independent
-additions to Gratton and Toint, change existing licenses, or reassign third-party
-copyrights.
+The upstream `LICENCE.txt` applies to the S2MPJ material identified above,
+including the local corrections to `src/s2mpjlib.py`. The OptiProfiler additions
+are licensed under the BSD 3-Clause License in `LICENSE`, which covers only those
+additions. This notice does not transfer authorship of those independent
+additions to Gratton and Toint, change the upstream license, or reassign
+third-party copyrights.
 
 ## Citation and distribution
 
@@ -65,8 +77,9 @@ The [authors' preprint](https://arxiv.org/abs/2407.07812) and
 [upstream documentation](https://github.com/GrattonToint/S2MPJ/blob/fea6a70048eaad28b13a08703ddbfdbf65cd9c30/s2mpj.pdf)
 describe the collection.
 
-Carry `LICENCE.txt` and this notice alongside the bundled source in every
-Python wheel/sdist and source archive.
+Carry `LICENSE`, `LICENCE.txt` and this notice alongside the bundled source in
+every Python wheel/sdist and source archive.
 This provider has no independent distribution metadata or version. It remains
-bundled with OptiProfiler; its licensing files use extensions covered by the
-core's existing source-package manifest.
+bundled with OptiProfiler. `LICENCE.txt` and this notice use extensions covered
+by the core's source-package manifest; `LICENSE` has no extension, so the core
+must name it there.

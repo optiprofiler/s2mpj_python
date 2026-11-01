@@ -23,4 +23,4 @@ are left alone. Native metadata fails closed: an undefined or impossible bound
 never drops a constraint, and an unreadable linear constraint fails the load.
 
 S2MPJ remains bundled with core, without a separate PyPI distribution.
-Keep LICENCE.txt and THIRD_PARTY_NOTICES.md in the consuming wheel/sdist.
+Keep LICENSE, LICENCE.txt and THIRD_PARTY_NOTICES.md in the consuming wheel/sdist.

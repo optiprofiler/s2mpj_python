@@ -137,19 +137,22 @@ an artifact; adopting either source or metadata requires a reviewed commit.
 
 The files under `src/` originate from [S2MPJ](https://github.com/GrattonToint/S2MPJ)
 by Serge Gratton and Philippe L. Toint. Their **BSD-3-Clause** license is
-preserved verbatim in [LICENCE.txt](LICENCE.txt). The
-[third-party notice](THIRD_PARTY_NOTICES.md) records the exact license revision,
-source comparison and attribution, and distinguishes the independently added
-OptiProfiler adapter and metadata. The upstream copyright notice does not
-assign ownership of those independent additions.
+preserved verbatim in [LICENCE.txt](LICENCE.txt). The OptiProfiler adapter,
+metadata, tests, documentation and workflows are licensed separately under the
+[BSD 3-Clause License](LICENSE), which covers only these independent additions.
+The [third-party notice](THIRD_PARTY_NOTICES.md) lists the files of each
+component and records the exact license revision, source comparison and
+attribution. The upstream copyright notice does not assign ownership of those
+independent additions.
 
 Please cite S. Gratton and Ph. L. Toint, *S2MPJ and CUTEst optimization
 problems for Matlab, Python and Julia*, Optimization Methods and Software
 40(4), 871-903 (2025), [doi:10.1080/10556788.2025.2490640](https://doi.org/10.1080/10556788.2025.2490640).
 
-Distributions must carry `LICENCE.txt` and `THIRD_PARTY_NOTICES.md` together
-with the source. CI checks their exact contents in source archives and in
-the core wheel/sdist built with this bundled provider. To check a built archive:
+Distributions must carry `LICENSE`, `LICENCE.txt` and `THIRD_PARTY_NOTICES.md`
+together with the source. CI checks the exact contents of all three in source
+archives, and of `LICENCE.txt` and the notice in the core wheel/sdist built with
+this bundled provider. To check a built archive:
 
 ```bash
 python3 tests/check_distribution.py /path/to/archive.whl
